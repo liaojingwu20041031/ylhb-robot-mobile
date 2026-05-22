@@ -1,16 +1,27 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { colors, ConsoleTone, radius, toneColors } from '../theme/consoleTheme';
+import { stateTone, textOrUnknown } from '../utils/status';
+import { StatusBadge } from './StatusBadge';
 
 type Props = {
   title: string;
-  value?: string | number | boolean;
-  tone?: 'normal' | 'ok' | 'warn' | 'error';
+  value?: string | number | boolean | null;
+  tone?: ConsoleTone;
+  note?: string;
 };
 
-export function StatusCard({ title, value = '-', tone = 'normal' }: Props) {
+export function StatusCard({ title, value, tone, note }: Props) {
+  const display = textOrUnknown(value);
+  const resolvedTone = tone ?? stateTone(typeof value === 'boolean' ? value : String(value ?? ''));
+  const palette = toneColors[resolvedTone];
   return (
-    <View style={[styles.card, styles[tone]]}>
+    <View style={[styles.card, { borderColor: palette.border }]}>
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.value}>{String(value)}</Text>
+      <Text style={styles.value} selectable numberOfLines={3}>
+        {display}
+      </Text>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
+      <StatusBadge label={display} tone={resolvedTone} />
     </View>
   );
 }
@@ -18,31 +29,27 @@ export function StatusCard({ title, value = '-', tone = 'normal' }: Props) {
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    minWidth: '47%',
+    minWidth: 142,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#d0d7de',
-    backgroundColor: '#fff',
+    backgroundColor: colors.panel,
+    gap: 7,
   },
   title: {
-    color: '#667085',
+    color: colors.textMuted,
     fontSize: 12,
-  },
-  value: {
-    marginTop: 6,
-    color: '#17202a',
-    fontSize: 16,
     fontWeight: '700',
   },
-  normal: {},
-  ok: {
-    borderColor: '#1f883d',
+  value: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 21,
   },
-  warn: {
-    borderColor: '#d29922',
-  },
-  error: {
-    borderColor: '#cf222e',
+  note: {
+    color: colors.textSubtle,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

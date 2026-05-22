@@ -9,7 +9,10 @@ export type RobotStatus = {
   connectionState: RobotConnectionState;
   canStatus?: string;
   zlacStatus?: string;
+  systemMode?: string;
   taskStatus?: string;
+  salesDialogueStatus?: string;
+  cart?: string;
   mappingStatus?: string;
   nav2Status?: string;
   lastOdomAgeSec?: number;
@@ -37,9 +40,16 @@ export type DebugStatus = {
   nodes: Record<string, boolean>;
   lastOdomAgeSec?: number;
   lastScanAgeSec?: number;
+  lastMapAgeSec?: number;
+  scanRangeMin?: number;
+  scanRangeMax?: number;
   zlacStatus?: string;
   mappingStatus?: string;
   nav2Status?: string;
+  taskStatus?: string;
+  systemMode?: string;
+  salesDialogueStatus?: string;
+  cart?: string;
 };
 
 export type NavigationGoalRequest = {
@@ -70,12 +80,41 @@ export type InitialPoseRequest = {
   yaw: number;
 };
 
-export type AppLogType = 'info' | 'warn' | 'error' | 'api' | 'debug';
+export type AppLogType = 'info' | 'warn' | 'error' | 'api' | 'debug' | 'user';
 
 export type AppLog = {
   id: string;
   type: AppLogType;
   message: string;
   detail?: string;
+  source?: string;
+  timestamp: number;
+};
+
+export type StatusSource = 'Mock' | 'WebSocket' | 'HTTP Polling' | '未知';
+
+export type MockScenario =
+  | 'normal'
+  | 'scan_fault'
+  | 'chassis_fault'
+  | 'mapping'
+  | 'navigation'
+  | 'task_running';
+
+export type PendingState = {
+  status: boolean;
+  stop: boolean;
+  velocity: boolean;
+  task: boolean;
+  debug: boolean;
+  mapping: boolean;
+  navigation: boolean;
+  copy: boolean;
+};
+
+export type ConnectionTestResult = {
+  ok: boolean;
+  message: string;
+  latencyMs?: number;
   timestamp: number;
 };

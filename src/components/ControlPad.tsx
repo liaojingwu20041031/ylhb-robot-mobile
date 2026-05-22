@@ -1,36 +1,80 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { robotActions } from '../store/robotStore';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/consoleTheme';
+import { freshnessTone } from '../utils/status';
+import { robotActions, useRobotStore } from '../store/robotStore';
+import { AppButton } from './AppButton';
+import { HelpText } from './HelpText';
 
 const DURATION_MS = 300;
+const THROTTLE_MS = 200;
+const LOCK_TIMEOUT_MS = 10000;
 
 function command(linear_x: number, angular_z: number) {
   return robotActions.sendVelocity({ linear_x, angular_z, duration_ms: DURATION_MS });
 }
 
 export function ControlPad() {
+  const { status, pending } = useRobotStore((snapshot) => ({
+    status: snapshot.status,
+    pending: snapshot.pending,
+  }));
+  const [unlocked, setUnlocked] = useState(false);
+  const lastSentRef = useRef(0);
+
+  const bridgeReady = status.online && status.connectionState === 'connected';
+  const fresh = freshnessTone(status.lastOdomAgeSec) !== 'danger' && freshnessTone(status.lastScanAgeSec) !== 'danger';
+  const movementDisabled = !unlocked || !bridgeReady || !fresh || pending.velocity;
+
+  useEffect(() => {
+    if (!unlocked) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setUnlocked(false), LOCK_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [unlocked, pending.velocity]);
+
+  const blockReason = useMemo(() => {
+    if (!bridgeReady) return 'Bridge 断开或未连接，运动按钮已禁用。';
+    if (!fresh) return '关键状态过期，运动按钮已禁用。';
+    if (!unlocked) return '控制锁已锁定，解锁后才能发送运动命令。';
+    return '控制已解锁，10 秒无操作会自动上锁。';
+  }, [bridgeReady, fresh, unlocked]);
+
+  const send = (linear: number, angular: number) => {
+    const now = Date.now();
+    if (now - lastSentRef.current < THROTTLE_MS) {
+      robotActions.addLog('warn', '底盘命令被 200ms 节流拦截', undefined, '底盘控制');
+      return;
+    }
+    lastSentRef.current = now;
+    setUnlocked(true);
+    command(linear, angular);
+  };
+
   return (
     <View style={styles.panel}>
-      <Text style={styles.notice}>每次点击只发送 300ms 短时速度命令。</Text>
-      <TouchableOpacity style={styles.button} onPress={() => command(0.03, 0)}>
-        <Text style={styles.buttonText}>前进</Text>
-      </TouchableOpacity>
-      <View style={styles.row}>
-        <TouchableOpacity style={styles.button} onPress={() => command(0, 0.15)}>
-          <Text style={styles.buttonText}>左转</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.stop} onPress={() => robotActions.stop()}>
-          <Text style={styles.stopText}>停止</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => command(0, -0.15)}>
-          <Text style={styles.buttonText}>右转</Text>
-        </TouchableOpacity>
+      <HelpText tone="warning">
+        本页面用于低速点动测试底盘。每次点击只发送短时速度命令，后端会自动停车。首次测试请架空轮子。
+      </HelpText>
+      <View style={styles.lockRow}>
+        <Text style={styles.lockText}>{unlocked ? '控制锁：已解锁' : '控制锁：已锁定'}</Text>
+        <AppButton
+          label={unlocked ? '立即上锁' : '解锁控制'}
+          variant={unlocked ? 'secondary' : 'warning'}
+          onPress={() => setUnlocked((value) => !value)}
+          style={styles.lockButton}
+        />
       </View>
-      <TouchableOpacity style={styles.button} onPress={() => command(-0.03, 0)}>
-        <Text style={styles.buttonText}>后退</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.estop} onPress={() => robotActions.stop()}>
-        <Text style={styles.estopText}>急停</Text>
-      </TouchableOpacity>
+      <HelpText tone={movementDisabled ? 'warning' : 'success'}>{blockReason}</HelpText>
+      <View style={styles.grid}>
+        <AppButton label="前进" description="0.03 m/s，300ms" disabled={movementDisabled} loading={pending.velocity} onPress={() => send(0.03, 0)} style={styles.full} />
+        <AppButton label="左转" description="0.15 rad/s，300ms" disabled={movementDisabled} loading={pending.velocity} onPress={() => send(0, 0.15)} style={styles.third} />
+        <AppButton label="停止" description="发送全局 STOP" variant="secondary" loading={pending.stop} onPress={() => robotActions.stop()} style={styles.third} />
+        <AppButton label="右转" description="-0.15 rad/s，300ms" disabled={movementDisabled} loading={pending.velocity} onPress={() => send(0, -0.15)} style={styles.third} />
+        <AppButton label="后退" description="-0.03 m/s，300ms" disabled={movementDisabled} loading={pending.velocity} onPress={() => send(-0.03, 0)} style={styles.full} />
+        <AppButton label="急停" description="无需解锁，立即请求停车" variant="danger" loading={pending.stop} onPress={() => robotActions.stop()} style={styles.full} />
+      </View>
     </View>
   );
 }
@@ -38,56 +82,36 @@ export function ControlPad() {
 const styles = StyleSheet.create({
   panel: {
     gap: 12,
-    alignItems: 'stretch',
   },
-  row: {
+  lockRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  lockText: {
+    color: colors.text,
+    fontWeight: '900',
+  },
+  lockButton: {
+    minWidth: 112,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
-  notice: {
-    color: '#8a6d1d',
-    backgroundColor: '#fff8c5',
-    borderColor: '#d29922',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
+  full: {
+    width: '100%',
   },
-  button: {
+  third: {
     flex: 1,
-    minHeight: 56,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1f6feb',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  stop: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#57606a',
-  },
-  stopText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  estop: {
-    minHeight: 64,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#cf222e',
-  },
-  estopText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '800',
+    minWidth: 96,
   },
 });

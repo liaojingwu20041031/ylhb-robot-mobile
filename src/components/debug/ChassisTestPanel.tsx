@@ -1,5 +1,8 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { robotActions } from '../../store/robotStore';
+import { View } from 'react-native';
+import { robotActions, useRobotStore } from '../../store/robotStore';
+import { AppButton } from '../AppButton';
+import { HelpText } from '../HelpText';
+import { SectionCard } from '../SectionCard';
 
 const DURATION_MS = 300;
 
@@ -14,82 +17,17 @@ function test(mode: 'forward' | 'backward' | 'left' | 'right') {
 }
 
 export function ChassisTestPanel() {
+  const pending = useRobotStore((snapshot) => snapshot.pending);
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>底盘测试</Text>
-      <Text style={styles.notice}>第一次测试请架空轮子，确认周围安全。</Text>
-      <View style={styles.row}>
-        <Button label="低速前进" onPress={() => test('forward')} />
-        <Button label="低速后退" onPress={() => test('backward')} />
+    <SectionCard title="底盘测试" description="用于确认 ZLAC 底盘是否响应 /cmd_vel。首次测试请架空轮子。">
+      <HelpText tone="warning">风险提示：底盘测试会发送短时运动命令，请确认轮子架空或周围安全。</HelpText>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        <AppButton label="短时前进" description="0.03 m/s，300ms" loading={pending.velocity} onPress={() => test('forward')} style={{ flex: 1, minWidth: 140 }} />
+        <AppButton label="短时后退" description="-0.03 m/s，300ms" loading={pending.velocity} onPress={() => test('backward')} style={{ flex: 1, minWidth: 140 }} />
+        <AppButton label="短时左转" description="0.15 rad/s，300ms" loading={pending.velocity} onPress={() => test('left')} style={{ flex: 1, minWidth: 140 }} />
+        <AppButton label="短时右转" description="-0.15 rad/s，300ms" loading={pending.velocity} onPress={() => test('right')} style={{ flex: 1, minWidth: 140 }} />
+        <AppButton label="立即停止" variant="secondary" loading={pending.velocity} onPress={() => robotActions.chassisStop()} style={{ flex: 1, minWidth: 140 }} />
       </View>
-      <View style={styles.row}>
-        <Button label="左转" onPress={() => test('left')} />
-        <Button label="右转" onPress={() => test('right')} />
-      </View>
-      <View style={styles.row}>
-        <Button label="停止" onPress={() => robotActions.chassisStop()} neutral />
-        <Button label="急停" onPress={() => robotActions.stop()} danger />
-      </View>
-    </View>
+    </SectionCard>
   );
 }
-
-function Button({
-  label,
-  onPress,
-  danger,
-  neutral,
-}: {
-  label: string;
-  onPress: () => void;
-  danger?: boolean;
-  neutral?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.button, neutral && styles.neutral, danger && styles.danger]}
-      onPress={onPress}
-    >
-      <Text style={styles.buttonText}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-const styles = StyleSheet.create({
-  card: {
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d0d7de',
-    backgroundColor: '#fff',
-    gap: 10,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  notice: {
-    color: '#9a6700',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  button: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#0969da',
-  },
-  neutral: {
-    backgroundColor: '#57606a',
-  },
-  danger: {
-    backgroundColor: '#cf222e',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-});

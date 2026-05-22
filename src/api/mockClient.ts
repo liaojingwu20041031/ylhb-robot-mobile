@@ -8,6 +8,7 @@ import {
   RobotStatus,
   TaskCommand,
   VelocityCommand,
+  MockScenario,
 } from './types';
 
 const delay = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,17 +16,28 @@ const delay = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
 let mappingStatus = 'not_running';
 let nav2Status = 'not_running';
 let taskStatus = 'idle';
+let scenario: MockScenario = 'normal';
+
+export function setMockScenario(next: MockScenario) {
+  scenario = next;
+  mappingStatus = next === 'mapping' ? 'running' : 'not_running';
+  nav2Status = next === 'navigation' ? 'running' : 'not_running';
+  taskStatus = next === 'task_running' ? '正在执行取货任务' : 'idle';
+}
 
 const status = (): RobotStatus => ({
-  online: true,
+  online: scenario !== 'chassis_fault',
   connectionState: 'connected',
-  canStatus: 'mock_online',
-  zlacStatus: 'mock_ready',
+  canStatus: scenario === 'chassis_fault' ? 'fault' : 'mock_online',
+  zlacStatus: scenario === 'chassis_fault' ? 'fault' : 'mock_ready',
+  systemMode: scenario === 'task_running' ? 'retail_task' : 'engineering_console',
   taskStatus,
+  salesDialogueStatus: scenario === 'task_running' ? 'listening' : 'idle',
+  cart: scenario === 'task_running' ? '可乐 x1' : '空',
   mappingStatus,
   nav2Status,
-  lastOdomAgeSec: 0.12,
-  lastScanAgeSec: 0.09,
+  lastOdomAgeSec: scenario === 'chassis_fault' ? 8.4 : 0.12,
+  lastScanAgeSec: scenario === 'scan_fault' ? 9.8 : 0.09,
   batteryPercent: 86,
   timestamp: Date.now(),
 });
@@ -34,12 +46,15 @@ const debugStatus = (): DebugStatus => ({
   online: true,
   topics: {
     '/cmd_vel': true,
-    '/odom': true,
-    '/scan': true,
+    '/odom': scenario !== 'chassis_fault',
+    '/scan': scenario !== 'scan_fault',
     '/map': mappingStatus === 'running' || nav2Status === 'running',
   },
   nodes: {
-    zlac8015d_canopen_controller: true,
+    bringup: scenario !== 'chassis_fault',
+    zlac8015d_canopen_controller: scenario !== 'chassis_fault',
+    rplidar_node: scenario !== 'scan_fault',
+    tf: true,
     slam_toolbox: mappingStatus === 'running',
     bt_navigator: nav2Status === 'running',
     controller_server: nav2Status === 'running',
@@ -47,11 +62,18 @@ const debugStatus = (): DebugStatus => ({
     amcl: nav2Status === 'running',
     map_server: nav2Status === 'running',
   },
-  lastOdomAgeSec: 0.12,
-  lastScanAgeSec: 0.09,
-  zlacStatus: 'mock_ready',
+  lastOdomAgeSec: scenario === 'chassis_fault' ? 8.4 : 0.12,
+  lastScanAgeSec: scenario === 'scan_fault' ? 9.8 : 0.09,
+  lastMapAgeSec: mappingStatus === 'running' || nav2Status === 'running' ? 0.4 : undefined,
+  scanRangeMin: scenario === 'scan_fault' ? undefined : 0.15,
+  scanRangeMax: scenario === 'scan_fault' ? undefined : 12,
+  zlacStatus: scenario === 'chassis_fault' ? 'fault' : 'mock_ready',
   mappingStatus,
   nav2Status,
+  systemMode: scenario === 'task_running' ? 'retail_task' : 'engineering_console',
+  taskStatus,
+  salesDialogueStatus: scenario === 'task_running' ? 'listening' : 'idle',
+  cart: scenario === 'task_running' ? '可乐 x1' : '空',
 });
 
 const ok = async <T>(data?: T, message = 'mock ok'): Promise<ApiResponse<T>> => {

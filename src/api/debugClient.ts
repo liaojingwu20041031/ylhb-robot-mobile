@@ -51,9 +51,16 @@ function normalizeDebugStatus(raw: any): DebugStatus {
     nodes: raw.nodes ?? {},
     lastOdomAgeSec: raw.lastOdomAgeSec ?? raw.last_odom_age_sec,
     lastScanAgeSec: raw.lastScanAgeSec ?? raw.last_scan_age_sec,
+    lastMapAgeSec: raw.lastMapAgeSec ?? raw.last_map_age_sec,
+    scanRangeMin: raw.scanRangeMin ?? raw.scan_range_min,
+    scanRangeMax: raw.scanRangeMax ?? raw.scan_range_max,
     zlacStatus: raw.zlacStatus ?? raw.zlac_status,
     mappingStatus: raw.mappingStatus ?? raw.mapping_status,
     nav2Status: raw.nav2Status ?? raw.nav2_status,
+    taskStatus: raw.taskStatus ?? raw.task_status,
+    systemMode: raw.systemMode ?? raw.system_mode,
+    salesDialogueStatus: raw.salesDialogueStatus ?? raw.sales_dialogue_status,
+    cart: typeof raw.cart === 'string' ? raw.cart : raw.cart ? JSON.stringify(raw.cart) : undefined,
   };
 }
 

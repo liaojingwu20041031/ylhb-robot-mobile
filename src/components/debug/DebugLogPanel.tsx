@@ -1,43 +1,21 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
 import { LogPanel } from '../LogPanel';
 import { robotActions, useRobotStore } from '../../store/robotStore';
+import { AppButton } from '../AppButton';
+import { SectionCard } from '../SectionCard';
 
 export function DebugLogPanel() {
-  const logs = useRobotStore((snapshot) => snapshot.logs);
+  const { logs, pending } = useRobotStore((snapshot) => ({
+    logs: snapshot.logs,
+    pending: snapshot.pending,
+  }));
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <Text style={styles.title}>调试日志</Text>
-        <TouchableOpacity style={styles.clear} onPress={() => robotActions.clearLogs()}>
-          <Text style={styles.clearText}>清空</Text>
-        </TouchableOpacity>
+    <SectionCard title="调试日志" description="显示最近调试操作，并支持复制纯文本调试日志。">
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <AppButton label="复制调试日志" variant="secondary" loading={pending.copy} onPress={() => robotActions.copyLogs('recent50')} style={{ flex: 1, minWidth: 140 }} />
+        <AppButton label="清空日志" variant="ghost" onPress={() => robotActions.clearLogs()} style={{ flex: 1, minWidth: 120 }} />
       </View>
       <LogPanel logs={logs.slice(0, 20)} filter="all" />
-    </View>
+    </SectionCard>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    gap: 10,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  clear: {
-    backgroundColor: '#57606a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  clearText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-});

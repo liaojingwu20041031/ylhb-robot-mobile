@@ -1,17 +1,20 @@
 import { Link } from 'expo-router';
 import { PropsWithChildren } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/consoleTheme';
+import { GlobalSafetyBar } from './GlobalSafetyBar';
 
 type Props = PropsWithChildren<{
   title: string;
   subtitle?: string;
+  showSafetyBar?: boolean;
 }>;
 
-export function PageContainer({ title, subtitle, children }: Props) {
+export function PageContainer({ title, subtitle, showSafetyBar = true, children }: Props) {
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.heading}>
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
@@ -19,6 +22,7 @@ export function PageContainer({ title, subtitle, children }: Props) {
           首页
         </Link>
       </View>
+      {showSafetyBar ? <GlobalSafetyBar /> : null}
       {children}
     </ScrollView>
   );
@@ -26,9 +30,9 @@ export function PageContainer({ title, subtitle, children }: Props) {
 
 const styles = StyleSheet.create({
   content: {
-    padding: 16,
+    padding: 14,
     gap: 14,
-    backgroundColor: '#f4f6f8',
+    backgroundColor: colors.bg,
     minHeight: '100%',
   },
   header: {
@@ -37,23 +41,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  heading: {
+    flex: 1,
+    minWidth: 0,
+  },
   title: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#17202a',
+    fontWeight: '900',
+    color: colors.text,
   },
   subtitle: {
     marginTop: 4,
     fontSize: 13,
-    color: '#667085',
+    lineHeight: 18,
+    color: colors.textMuted,
   },
   home: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: '#1f6feb',
-    color: '#fff',
+    borderRadius: 8,
+    backgroundColor: colors.panelSoft,
+    borderColor: colors.border,
+    borderWidth: 1,
+    color: colors.text,
     overflow: 'hidden',
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });
