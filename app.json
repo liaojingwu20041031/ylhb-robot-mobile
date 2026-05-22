@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "YLHB Robot Mobile",
+    "slug": "ylhb-robot-mobile",
+    "scheme": "ylhbrobot",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "expo-router"
+    ],
+    "android": {
+      "package": "com.ylhb.robotmobile"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
