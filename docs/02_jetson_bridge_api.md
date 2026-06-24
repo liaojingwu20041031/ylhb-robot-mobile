@@ -1,33 +1,30 @@
-# Jetson Bridge API 设计
+# Jetson Bridge API
 
 ## 概述
 
-Jetson bridge 使用 FastAPI + rclpy，运行在 Jetson 局域网地址上，默认端口 `8000`。手机端通过 HTTP 调用命令接口，通过 WebSocket 接收状态推送。
+Jetson `ylhb_mobile_bridge` 使用 HTTP/WebSocket 暴露真实机器人调试接口。APP 不调用文本任务、路线、巡检或 Nav goal 接口。
 
 ## HTTP 接口
 
 - `GET /api/status`
-- `POST /api/cmd_vel`
-- `POST /api/text_command`
-- `POST /api/task`
-- `POST /api/stop`
 - `GET /api/debug/status`
-- `POST /api/debug/chassis/test`
+- `GET /api/debug/system/status`
+- `POST /api/debug/system/start/bringup`
+- `POST /api/debug/system/stop/bringup`
+- `POST /api/debug/system/start/mapping`
+- `POST /api/debug/system/stop/mapping`
+- `POST /api/cmd_vel`
 - `POST /api/debug/chassis/stop`
+- `POST /api/stop`
 - `GET /api/debug/mapping/status`
-- `POST /api/debug/mapping/start`
+- `GET /api/debug/mapping/map_snapshot?downsample=1`
 - `POST /api/debug/mapping/save`
-- `POST /api/debug/mapping/stop`
-- `GET /api/debug/navigation/status`
-- `POST /api/debug/navigation/start`
-- `POST /api/debug/navigation/set_initial_pose`
-- `POST /api/debug/navigation/goal`
-- `POST /api/debug/navigation/cancel`
 
 ## WebSocket
 
 - `GET /ws/status`
-- 每 500ms 推送一次状态 JSON。
+
+WebSocket 失败只影响状态来源显示，APP 会继续通过 HTTP fallback 工作。
 
 ## JSON 示例
 
@@ -41,12 +38,20 @@ Jetson bridge 使用 FastAPI + rclpy，运行在 Jetson 局域网地址上，默
 }
 ```
 
+`POST /api/debug/mapping/save`
+
+```json
+{
+  "map_name": "site_map"
+}
+```
+
 通用响应：
 
 ```json
 {
   "ok": true,
-  "message": "command accepted",
+  "message": "ok",
   "data": {}
 }
 ```
@@ -56,23 +61,15 @@ Jetson bridge 使用 FastAPI + rclpy，运行在 Jetson 局域网地址上，默
 ```json
 {
   "ok": false,
-  "error": "invalid_request",
-  "message": "linear speed exceeds limit"
+  "error": "no_map",
+  "message": "waiting for /map"
 }
 ```
 
-## 错误码约定
-
-- `invalid_request`：请求字段不合法。
-- `ros_unavailable`：ROS2 节点或 action 不可用。
-- `process_error`：受控进程启动或停止失败。
-- `not_allowed`：命令不在白名单内。
-- `internal_error`：服务内部错误。
-
 ## 安全限制
 
-- `/cmd_vel` 限制最大线速度和角速度。
-- 所有速度命令必须包含 duration，超时自动发布 0 速度。
-- `/api/stop` 立即停车并发布停止任务文本。
-- 进程管理只允许白名单命令。
-- 服务仅用于局域网，不暴露公网。
+- `/api/cmd_vel` 必须包含 `duration_ms`，后端超时自动停车。
+- 普通停止走 `/api/debug/chassis/stop`。
+- 急停走 `/api/stop`。
+- 进程管理只允许 bridge 白名单命令。
+- 服务仅用于局域网调试，不应暴露公网。

@@ -18,15 +18,16 @@ export async function request<T>(
       ...options,
     });
     const json = (await response.json().catch(() => null)) as ApiResponse<T> | T | null;
-    if (json && typeof json === 'object' && 'ok' in json) {
-      return json as ApiResponse<T>;
-    }
     if (!response.ok) {
+      const envelope = json && typeof json === 'object' && 'ok' in json ? json as ApiResponse<T> : null;
       return {
         ok: false,
-        error: `http_${response.status}`,
-        message: response.statusText,
+        error: envelope?.error ?? `http_${response.status}`,
+        message: envelope?.message ?? response.statusText,
       };
+    }
+    if (json && typeof json === 'object' && 'ok' in json) {
+      return json as ApiResponse<T>;
     }
     return { ok: true, data: json as T };
   } catch (error) {

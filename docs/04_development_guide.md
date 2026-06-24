@@ -22,19 +22,16 @@ npx expo start
 
 手机安装 Expo Go，确保手机与开发电脑在同一局域网，扫描终端二维码打开 APP。
 
-## 切换 Mock / Real Robot Mode
+## 配置真实 Jetson Bridge
 
-打开设置页：
-
-- 开启 mock mode：使用模拟数据，不访问网络。
-- 关闭 mock mode：使用真实 Jetson bridge。
+打开首页或设置页，填写真实 Jetson Base URL 后点击连接。APP 会直接请求真实 bridge。
 
 ## 配置 Jetson IP
 
 在设置页填写：
 
 ```text
-http://192.168.1.100:8000
+http://192.168.137.100:8000
 ```
 
 替换为 Jetson 实际局域网 IP。

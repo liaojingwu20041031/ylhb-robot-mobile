@@ -1,56 +1,53 @@
 # YLHB Robot Mobile
 
-YLHB Robot Mobile 是电力巡检机器人的手机端调试 APP，用于手机控制底层底盘、控制建图、查看状态等。手机端不直接连接 ROS2 DDS，而是通过 Jetson 上的 HTTP/WebSocket bridge 与 ROS2 通信。
+真实电力巡检机器人调试 APP。手机端不直连 ROS2 DDS，只通过 Jetson 上的 `ylhb_mobile_bridge` 使用 HTTP/WebSocket 调试底盘、状态和建图。
 
 ## 技术栈
 
 - Expo React Native
 - TypeScript
 - expo-router
-- FastAPI + rclpy Jetson bridge
+- Jetson `ylhb_mobile_bridge`（HTTP/WebSocket -> ROS2）
 
-## 安装与启动
+## 启动
 
 ```bash
 npm install
 npx expo start
 ```
 
-手机安装 Expo Go 后，扫描终端二维码查看。
+手机安装 Expo Go 后扫描二维码查看。
 
-## Mock Mode
-
-默认开启 mock mode。此模式不访问 Jetson 网络，可以直接查看 UI、点击按钮、验证日志和调试流程。
-
-## Real Robot Mode
+## 真实机器人调试流程
 
 1. Jetson 启动 `ylhb_mobile_bridge`。
-2. 手机和 Jetson 在同一局域网。
-3. 打开设置页，填写 `Jetson Base URL`，例如 `http://192.168.1.100:8000`。
-4. 关闭 mock mode，按需开启 WebSocket。
-5. 点击测试连接。
+2. 手机和 Jetson 在同一局域网或同一热点网段。
+3. 首页或设置页填写 `Jetson Base URL`，默认示例为 `http://192.168.137.100:8000`。
+4. 点击“连接机器人”，APP 会检查 `/api/status`、`/api/debug/status`、`/api/debug/system/status`、`/api/debug/mapping/status`。
+5. 进入状态页确认 `/cmd_vel`、`/odom`、`/scan`、TF、ZLAC、bringup、mapping、slam_toolbox、`/map` 和 Nav2 状态。
+6. 底盘页用于低速点动；建图页用于启动底层、启动建图、观察地图增长、低速移动和保存地图。
 
 ## 页面说明
 
-- 首页/连接页：显示项目名、连接状态、当前模式和入口按钮。
-- 状态面板：显示 bridge、CAN/ZLAC、/odom、/scan、/imu/data、TF、建图和系统进程状态。
-- 手动控制：短时低速控制、停止和急停。
-- 调试中心：系统进程检查、底盘低速点动、建图、地图快照、地图保存和调试日志。
-- 日志页：统一查看 info/warn/error/api/debug 日志。
-- 设置页：配置 Jetson URL、mock mode、WebSocket。
+- 首页：Jetson Base URL、连接状态、连接按钮和主流程入口。
+- 状态检查：真实 Bridge、ROS2 话题、TF、系统进程、建图和 Nav2 状态。
+- 底盘低速控制：短时 `/cmd_vel`、普通停止 `/api/debug/chassis/stop`、急停 `/api/stop`。
+- 建图调试：bringup、mapping、地图快照、内嵌低速控制、保存地图。
+- 日志：查看 API、错误和现场操作日志。
+- 设置：保存 Jetson URL、测试连接、恢复默认、调整刷新间隔。
 
-## 调试页安全提示
+## 安全提示
 
 - 第一次底盘测试请架空轮子。
-- 建图测试必须确保机器人周围安全。
-- 所有速度命令都是短时命令，后端会自动停车。
-- 急停按钮会调用 `/api/stop`。
+- `/imu/data` 缺失只提示风险，不会硬锁点动。
+- 地面低速移动前至少确认 `/odom` 新鲜。
+- 建图辅助移动前确认 `/odom`、`/scan`、TF 新鲜。
+- 急停按钮调用 `/api/stop`。
 
 ## 常见错误
 
-- 手机连不上 Jetson：确认二者在同一局域网，Jetson 防火墙允许 8000 端口。
+- 手机连不上 Jetson：确认二者网络互通，Jetson 防火墙允许 8000 端口。
 - `/api/status` 不通：确认 bridge 已启动，URL 没有写错。
-- `/cmd_vel` 没反应：确认 ROS2 bringup 已启动，话题名为 `/cmd_vel`。
-- WebSocket 断开：关闭再打开设置页 WebSocket 开关，或先用 HTTP 手动刷新。
-- CORS 问题：bridge 已默认允许局域网调试跨域，若仍失败请检查代理或浏览器环境。
-- Jetson 和手机不在同一局域网：切换到同一 Wi-Fi 或使用可达的局域网 IP。
+- `/cmd_vel` 不存在：确认 ROS2 bringup 已启动。
+- 地图预览显示等待：mapping 启动后继续低速移动，等待 `/map` 发布。
+- WebSocket 断开：APP 会降级为 HTTP fallback，可继续使用状态刷新。

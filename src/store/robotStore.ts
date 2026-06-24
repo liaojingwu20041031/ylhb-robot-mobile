@@ -1,58 +1,52 @@
 import * as Clipboard from 'expo-clipboard';
 import { useSyncExternalStore } from 'react';
-import { createDebugClient } from '../api/debugClient';
-import { mockDebugClient, mockPatrolClient, mockRobotClient, mockRouteClient, setMockScenario } from '../api/mockClient';
-import { createPatrolClient } from '../api/patrolClient';
-import { createRobotClient, StatusSocket } from '../api/robotClient';
-import { createRouteClient } from '../api/routeClient';
+import { createRobotApi, MapSocket, StatusSocket } from '../api/robotApi';
 import {
   ApiResponse,
   AppLog,
   AppLogType,
-  ChassisTestRequest,
   ConnectionTestResult,
   DebugStatus,
-  InitialPoseRequest,
   MapSnapshot,
   MappingSaveRequest,
   MappingStatus,
-  MockScenario,
-  NavigationGoalRequest,
-  PatrolCommand,
-  PatrolEvent,
-  PatrolRouteActiveResponse,
-  PatrolRouteMapInfo,
-  PatrolStatus,
+  MapSource,
   PendingState,
   RobotStatus,
+  SavedMap,
+  SpeedProfile,
   StatusSource,
   SystemStatus,
-  TaskCommand,
   VelocityCommand,
 } from '../api/types';
 import { buildStatusReport, formatLogs } from '../utils/status';
 
 type StoreState = {
   baseUrl: string;
-  mockMode: boolean;
-  mockScenario: MockScenario;
-  websocketEnabled: boolean;
+  connectionState: RobotStatus['connectionState'];
   refreshIntervalMs: number;
   statusSource: StatusSource;
   status: RobotStatus;
   debugStatus?: DebugStatus;
   systemStatus?: SystemStatus;
-  mappingDebugStatus?: MappingStatus;
+  mappingStatus?: MappingStatus;
   mapSnapshot?: MapSnapshot;
-  routeMap?: PatrolRouteMapInfo;
-  activeRoute?: PatrolRouteActiveResponse;
-  patrolStatus?: PatrolStatus;
-  patrolEvents: PatrolEvent[];
+  savedMap?: SavedMap;
+  mapSource: MapSource;
+  mapStreamConnected: boolean;
+  lastMapFrameAt?: number;
+  lastMapError?: string;
+  speedProfile: SpeedProfile;
+  linearSpeed: number;
+  angularSpeed: number;
+  commandDurationMs: number;
   logs: AppLog[];
   pending: PendingState;
   httpTest?: ConnectionTestResult;
   websocketTest?: ConnectionTestResult;
 };
+
+const DEFAULT_BASE_URL = 'http://192.168.137.100:8000';
 
 const initialStatus: RobotStatus = {
   online: false,
@@ -61,33 +55,36 @@ const initialStatus: RobotStatus = {
 };
 
 const initialPending: PendingState = {
-  status: false,
-  stop: false,
-  velocity: false,
-  task: false,
-  debug: false,
-  system: false,
-  mapping: false,
-  navigation: false,
-  copy: false,
-  route: false,
-  patrol: false,
+  connectPending: false,
+  statusPending: false,
+  controlPending: false,
+  systemPending: false,
+  mappingStatusPending: false,
+  mapSnapshotPending: false,
+  mapSavePending: false,
+  copyPending: false,
 };
 
 let state: StoreState = {
-  baseUrl: 'http://192.168.1.100:8000',
-  mockMode: true,
-  mockScenario: 'normal',
-  websocketEnabled: false,
+  baseUrl: DEFAULT_BASE_URL,
+  connectionState: 'disconnected',
   refreshIntervalMs: 1000,
   statusSource: '未知',
   status: initialStatus,
-  patrolEvents: [],
+  mapSource: 'none',
+  mapStreamConnected: false,
+  speedProfile: '低速',
+  linearSpeed: 0.05,
+  angularSpeed: 0.18,
+  commandDurationMs: 500,
   logs: [],
   pending: initialPending,
 };
 
 let socket: StatusSocket | null = null;
+let mapSocket: MapSocket | null = null;
+let statusReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let statusReconnectAttempt = 0;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -115,31 +112,25 @@ function addLog(type: AppLogType, message: string, detail?: string, source = 'AP
   setState({ logs: [log, ...state.logs].slice(0, 500) });
 }
 
-function robotClient() {
-  return state.mockMode ? mockRobotClient : createRobotClient(state.baseUrl);
+function api() {
+  return createRobotApi(state.baseUrl);
 }
 
-function debugClient() {
-  return state.mockMode ? mockDebugClient : createDebugClient(state.baseUrl);
-}
-
-function routeClient() {
-  return state.mockMode ? mockRouteClient : createRouteClient(state.baseUrl);
-}
-
-function patrolClient() {
-  return state.mockMode ? mockPatrolClient : createPatrolClient(state.baseUrl);
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function responseDetail(value: string | null | undefined) {
   return value ?? undefined;
 }
 
-function applyResponse<T>(label: string, response: ApiResponse<T>) {
+function applyResponse<T>(label: string, response: ApiResponse<T>, logSuccess = true) {
   if (response.ok) {
-    addLog('api', `${label}: ${response.message ?? 'ok'}`, undefined, state.mockMode ? 'Mock' : 'Bridge');
+    if (logSuccess) {
+      addLog('api', `${label}: ${response.message ?? 'ok'}`, undefined, 'Bridge');
+    }
   } else {
-    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, responseDetail(response.error), state.mockMode ? 'Mock' : 'Bridge');
+    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, responseDetail(response.error), 'Bridge');
   }
 }
 
@@ -147,20 +138,85 @@ async function run<T>(
   label: string,
   action: () => Promise<ApiResponse<T>>,
   pendingKey?: keyof PendingState,
+  logSuccess = true,
 ) {
   if (pendingKey) {
     setPending(pendingKey, true);
   }
-  addLog('api', `${label}: request`, undefined, state.mockMode ? 'Mock' : 'Bridge');
   try {
     const response = await action();
-    applyResponse(label, response);
+    applyResponse(label, response, logSuccess);
     return response;
   } finally {
     if (pendingKey) {
       setPending(pendingKey, false);
     }
   }
+}
+
+function updateConnection(connectionState: RobotStatus['connectionState'], online = connectionState === 'connected') {
+  setState({
+    connectionState,
+    status: { ...state.status, connectionState, online },
+  });
+}
+
+function openStatusSocket() {
+  if (socket) {
+    return;
+  }
+  if (statusReconnectTimer) {
+    clearTimeout(statusReconnectTimer);
+    statusReconnectTimer = null;
+  }
+  socket = api().connectStatusWebSocket(
+    (status) => {
+      statusReconnectAttempt = 0;
+      setState({
+        connectionState: 'connected',
+        statusSource: 'WebSocket',
+        status: { ...status, connectionState: 'connected', online: true },
+      });
+    },
+    (message) => {
+      addLog('warn', `${message}，状态来源降级为 HTTP fallback`, undefined, 'WebSocket');
+      setState({ statusSource: 'HTTP fallback' });
+      socket = null;
+      if (statusReconnectAttempt < 3) {
+        const delays = [1000, 2000, 5000];
+        const delay = delays[statusReconnectAttempt] ?? 5000;
+        statusReconnectAttempt += 1;
+        statusReconnectTimer = setTimeout(() => openStatusSocket(), delay);
+      }
+    },
+  );
+  addLog('info', '已尝试打开 /ws/status 状态流', undefined, 'WebSocket');
+}
+
+function closeMapSocket() {
+  mapSocket?.close();
+  mapSocket = null;
+  setState({ mapStreamConnected: false });
+}
+
+async function refreshAllForConnection() {
+  const [status, debugStatus, systemStatus, mappingStatus] = await Promise.all([
+    api().getStatus(),
+    api().getDebugStatus(),
+    api().getSystemStatus(),
+    api().getMappingStatus(),
+  ]);
+  applyResponse('GET /api/status', status);
+  applyResponse('GET /api/debug/status', debugStatus);
+  applyResponse('GET /api/debug/system/status', systemStatus);
+  applyResponse('GET /api/debug/mapping/status', mappingStatus);
+  if (status.ok && status.data) {
+    setState({ status: { ...status.data, connectionState: 'connected', online: true } });
+  }
+  if (debugStatus.ok && debugStatus.data) setState({ debugStatus: debugStatus.data });
+  if (systemStatus.ok && systemStatus.data) setState({ systemStatus: systemStatus.data });
+  if (mappingStatus.ok && mappingStatus.data) setState({ mappingStatus: mappingStatus.data });
+  return status.ok && debugStatus.ok && systemStatus.ok && mappingStatus.ok;
 }
 
 export const robotActions = {
@@ -176,63 +232,115 @@ export const robotActions = {
     setState({ logs: [] });
     addLog('user', '日志已清空', undefined, '用户操作');
   },
-  saveSettings(baseUrl: string, mockMode: boolean, websocketEnabled: boolean, refreshIntervalMs = state.refreshIntervalMs) {
-    if (state.mockMode !== mockMode && socket) {
-      robotActions.stopStatusSocket();
+  saveSettings(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
+    robotActions.stopStatusSocket(false);
+    closeMapSocket();
+    setState({
+      baseUrl: baseUrl.replace(/\/+$/, ''),
+      refreshIntervalMs,
+      statusSource: '未知',
+      mapSource: 'none',
+      httpTest: undefined,
+      websocketTest: undefined,
+    });
+    addLog('info', `Jetson Base URL 已保存：${baseUrl}`, undefined, '设置');
+  },
+  async saveSettingsAndConnect(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
+    robotActions.saveSettings(baseUrl, refreshIntervalMs);
+    return robotActions.connectRobot();
+  },
+  restoreDefaults() {
+    robotActions.stopStatusSocket(false);
+    closeMapSocket();
+    setState({
+      baseUrl: DEFAULT_BASE_URL,
+      refreshIntervalMs: 1000,
+      statusSource: '未知',
+      mapSource: 'none',
+      httpTest: undefined,
+      websocketTest: undefined,
+    });
+    addLog('user', '已恢复默认 Jetson 地址和刷新间隔', undefined, '设置');
+  },
+  async connectRobot() {
+    setPending('connectPending', true);
+    updateConnection('connecting', false);
+    try {
+      const ok = await refreshAllForConnection();
+      if (ok) {
+        setState({ connectionState: 'connected', statusSource: 'HTTP fallback' });
+        updateConnection('connected', true);
+        openStatusSocket();
+        return { ok: true, message: '机器人连接成功', timestamp: Date.now() } as ConnectionTestResult;
+      }
+      updateConnection('error', false);
+      setState({ statusSource: 'HTTP fallback' });
+      return { ok: false, message: '连接失败：至少一个状态接口返回失败', timestamp: Date.now() } as ConnectionTestResult;
+    } finally {
+      setPending('connectPending', false);
     }
-    setState({ baseUrl, mockMode, websocketEnabled, refreshIntervalMs });
-    addLog('info', `设置已保存：${mockMode ? 'Mock Mode' : 'Real Robot Mode'}`, undefined, '设置');
   },
-  async setMockScenario(scenario: MockScenario) {
-    setMockScenario(scenario);
-    setState({ mockScenario: scenario });
-    addLog('debug', `Mock 演示场景切换：${scenario}`, undefined, 'Mock');
-    await robotActions.refreshStatus();
-    await robotActions.refreshDebugStatus();
-    await robotActions.refreshSystemStatus();
-    await robotActions.mappingStatus();
-    setState({ mapSnapshot: undefined });
+  startStatusSocket() {
+    openStatusSocket();
   },
-  async refreshStatus() {
-    setState({ status: { ...state.status, connectionState: 'connecting' } });
-    const response = await run('GET /api/status', () => robotClient().getStatus(), 'status');
+  stopStatusSocket(log = true) {
+    if (statusReconnectTimer) {
+      clearTimeout(statusReconnectTimer);
+      statusReconnectTimer = null;
+    }
+    statusReconnectAttempt = 0;
+    socket?.close();
+    socket = null;
+    if (log) {
+      addLog('info', 'WebSocket 状态流已关闭', undefined, 'WebSocket');
+    }
+  },
+  async refreshStatus(logSuccess = false) {
+    const response = await run('GET /api/status', () => api().getStatus(), logSuccess ? 'statusPending' : undefined, logSuccess);
     if (response.ok && response.data) {
       setState({
-        statusSource: state.mockMode ? 'Mock' : 'HTTP Polling',
-        status: {
-          ...response.data,
-          connectionState: 'connected',
-          online: response.data.online,
-        },
+        connectionState: 'connected',
+        statusSource: state.statusSource === 'WebSocket' ? 'WebSocket' : 'HTTP fallback',
+        status: { ...response.data, connectionState: 'connected', online: true },
       });
     } else {
-      setState({ statusSource: state.mockMode ? 'Mock' : 'HTTP Polling', status: { ...state.status, connectionState: 'error', online: false } });
+      updateConnection('error', false);
+      setState({ statusSource: 'HTTP fallback' });
     }
     return response;
   },
-  startStatusSocket() {
-    if (socket || state.mockMode || !state.websocketEnabled) {
-      return;
+  async refreshDebugStatus(logSuccess = false) {
+    const response = await run('GET /api/debug/status', () => api().getDebugStatus(), logSuccess ? 'statusPending' : undefined, logSuccess);
+    if (response.ok && response.data) {
+      setState({ debugStatus: response.data });
     }
-    socket = createRobotClient(state.baseUrl).connectStatusWebSocket(
-      (status) => {
-        setState({ statusSource: 'WebSocket', status: { ...status, connectionState: 'connected' } });
-      },
-      (message) => {
-        addLog('warn', message, undefined, 'WebSocket');
-        socket = null;
-      },
-    );
-    addLog('info', 'WebSocket 状态流已打开', undefined, 'WebSocket');
+    return response;
   },
-  stopStatusSocket() {
-    socket?.close();
-    socket = null;
-    addLog('info', 'WebSocket 状态流已关闭', undefined, 'WebSocket');
+  async refreshSystemStatus(logSuccess = false) {
+    const response = await run('GET /api/debug/system/status', () => api().getSystemStatus(), logSuccess ? 'systemPending' : undefined, logSuccess);
+    if (response.ok && response.data) {
+      setState({ systemStatus: response.data });
+    }
+    return response;
+  },
+  async refreshMappingStatus(logSuccess = false) {
+    const response = await run('GET /api/debug/mapping/status', () => api().getMappingStatus(), logSuccess ? 'mappingStatusPending' : undefined, logSuccess);
+    if (response.ok && response.data) {
+      setState({ mappingStatus: response.data });
+    }
+    return response;
+  },
+  async refreshStatusBundle(logSuccess = false) {
+    await Promise.all([
+      robotActions.refreshStatus(logSuccess),
+      robotActions.refreshDebugStatus(logSuccess),
+      robotActions.refreshSystemStatus(logSuccess),
+      robotActions.refreshMappingStatus(logSuccess),
+    ]);
   },
   async testHttpConnection() {
     const started = Date.now();
-    const response = await robotActions.refreshStatus();
+    const response = await robotActions.refreshStatus(true);
     const result: ConnectionTestResult = {
       ok: response.ok,
       message: response.ok ? '/api/status 正常' : response.message ?? response.error ?? '/api/status 失败',
@@ -244,15 +352,9 @@ export const robotActions = {
   },
   async testWebSocket() {
     const started = Date.now();
-    if (state.mockMode) {
-      const result = { ok: true, message: 'Mock Mode 不需要 WebSocket，演示状态正常', latencyMs: 0, timestamp: Date.now() };
-      setState({ websocketTest: result });
-      addLog('info', result.message, undefined, 'WebSocket');
-      return result;
-    }
     try {
-      robotActions.startStatusSocket();
-      const result = { ok: true, message: 'WebSocket 已尝试连接，请观察状态来源', latencyMs: Date.now() - started, timestamp: Date.now() };
+      openStatusSocket();
+      const result = { ok: true, message: '已尝试连接 /ws/status，请观察状态来源', latencyMs: Date.now() - started, timestamp: Date.now() };
       setState({ websocketTest: result });
       return result;
     } catch (error) {
@@ -262,209 +364,140 @@ export const robotActions = {
       return result;
     }
   },
-  restoreDefaults() {
+  setSpeedProfile(profile: SpeedProfile) {
+    const presets: Record<SpeedProfile, { linear: number; angular: number }> = {
+      超低速: { linear: 0.03, angular: 0.12 },
+      低速: { linear: 0.05, angular: 0.18 },
+      调试较快: { linear: 0.1, angular: 0.32 },
+    };
+    const preset = presets[profile];
     setState({
-      baseUrl: 'http://192.168.1.100:8000',
-      mockMode: true,
-      websocketEnabled: false,
-      refreshIntervalMs: 1000,
+      speedProfile: profile,
+      linearSpeed: clamp(preset.linear, 0.01, 0.15),
+      angularSpeed: clamp(preset.angular, 0.05, 0.5),
     });
-    addLog('user', '已恢复默认配置', undefined, '设置');
+    addLog('user', `速度档位已切换：${profile}`, undefined, '底盘控制');
   },
-  async sendVelocity(command: VelocityCommand) {
-    return run('POST /api/cmd_vel', () => robotClient().sendVelocity(command), 'velocity');
+  setLinearSpeed(value: number) {
+    setState({ linearSpeed: clamp(value, 0.01, 0.15) });
   },
-  async sendTextCommand(text: string) {
-    return run('POST /api/text_command', () => robotClient().sendTextCommand(text), 'task');
+  setAngularSpeed(value: number) {
+    setState({ angularSpeed: clamp(value, 0.05, 0.5) });
   },
-  async sendTask(command: TaskCommand) {
-    return run('POST /api/task', () => robotClient().sendTask(command), 'task');
+  setCommandDurationMs(value: number) {
+    setState({ commandDurationMs: clamp(Math.round(value), 50, 3000) });
   },
-  async stop() {
-    return run('POST /api/stop', () => robotClient().stop(), 'stop');
+  async sendVelocity(command: VelocityCommand, quiet = false) {
+    return run('POST /api/cmd_vel', () => api().sendVelocity(command), quiet ? undefined : 'controlPending', !quiet);
   },
-  async refreshSystemStatus() {
-    const response = await run('GET /api/debug/system/status', () => debugClient().getSystemStatus(), 'system');
-    if (response.ok && response.data) {
-      setState({ systemStatus: response.data });
-    }
-    return response;
+  async chassisStop() {
+    return run('POST /api/debug/chassis/stop', () => api().chassisStop(), 'controlPending');
+  },
+  async emergencyStop(quiet = false) {
+    return run('POST /api/stop', () => api().emergencyStop(), quiet ? undefined : 'controlPending', !quiet);
   },
   async startBringup() {
-    const response = await run('POST /api/debug/system/start/bringup', () => debugClient().startBringup(), 'system');
+    const response = await run('POST /api/debug/system/start/bringup', () => api().startBringup(), 'systemPending');
     await robotActions.refreshSystemStatus();
     await robotActions.refreshDebugStatus();
+    await robotActions.refreshMappingStatus();
     return response;
   },
   async stopBringup() {
     if (state.systemStatus?.mapping?.running) {
-      addLog('warn', '停止底盘前先停止 mapping 进程', undefined, '系统进程');
+      addLog('warn', '停止 bringup 前先停止 mapping 进程', undefined, '系统进程');
       await robotActions.stopMapping();
     }
-    const response = await run('POST /api/debug/system/stop/bringup', () => debugClient().stopBringup(), 'system');
+    const response = await run('POST /api/debug/system/stop/bringup', () => api().stopBringup(), 'systemPending');
     await robotActions.refreshSystemStatus();
     await robotActions.refreshDebugStatus();
-    return response;
-  },
-  async refreshDebugStatus() {
-    const response = await run('GET /api/debug/status', () => debugClient().getDebugStatus(), 'debug');
-    if (response.ok && response.data) {
-      setState({ debugStatus: response.data });
-    }
-    return response;
-  },
-  async chassisTest(command: ChassisTestRequest) {
-    return run('POST /api/debug/chassis/test', () => debugClient().chassisTest(command), 'velocity');
-  },
-  async chassisStop() {
-    return run('POST /api/debug/chassis/stop', () => debugClient().chassisStop(), 'velocity');
-  },
-  async mappingStatus() {
-    const response = await run('GET /api/debug/mapping/status', () => debugClient().getMappingStatus(), 'mapping');
-    if (response.ok && response.data) {
-      setState({ mappingDebugStatus: response.data });
-    }
+    await robotActions.refreshMappingStatus();
     return response;
   },
   async startMapping() {
-    const response = await run('POST /api/debug/system/start/mapping', () => debugClient().startMapping(), 'mapping');
+    closeMapSocket();
+    setState({ mapSnapshot: undefined, savedMap: undefined, mapSource: 'none', lastMapError: undefined });
+    const response = await run('POST /api/debug/system/start/mapping', () => api().startMapping(), 'mappingStatusPending');
     await robotActions.refreshSystemStatus();
-    await robotActions.mappingStatus();
-    return response;
-  },
-  async saveMapping(body: MappingSaveRequest) {
-    return run('POST /api/debug/mapping/save', () => debugClient().saveMapping(body), 'mapping');
-  },
-  async refreshMapSnapshot(downsample = 1) {
-    const response = await run(`GET /api/debug/mapping/map_snapshot?downsample=${downsample}`, () => debugClient().getMapSnapshot(downsample), 'mapping');
-    if (response.ok && response.data) {
-      setState({ mapSnapshot: response.data });
-    } else if (response.error === 'no_map') {
-      setState({ mapSnapshot: undefined });
-    }
+    await robotActions.refreshMappingStatus();
     return response;
   },
   async stopMapping() {
-    const response = await run('POST /api/debug/system/stop/mapping', () => debugClient().stopMapping(), 'mapping');
+    const response = await run('POST /api/debug/system/stop/mapping', () => api().stopMapping(), 'mappingStatusPending');
+    closeMapSocket();
+    setState({ mapSnapshot: undefined, savedMap: undefined, mapSource: 'none', lastMapError: undefined });
     await robotActions.refreshSystemStatus();
-    await robotActions.mappingStatus();
+    await robotActions.refreshMappingStatus();
     return response;
   },
-  async navigationStatus() {
-    const response = await run('GET /api/debug/navigation/status', () => debugClient().getNavigationStatus(), 'navigation');
+  async refreshMapSnapshot(downsample = 1, logSuccess = false) {
+    const response = await run(
+      `GET /api/debug/mapping/map_snapshot?downsample=${downsample}`,
+      () => api().getMapSnapshot(downsample),
+      logSuccess ? 'mapSnapshotPending' : undefined,
+      logSuccess,
+    );
     if (response.ok && response.data) {
-      setState({ debugStatus: response.data });
+      setState({ mapSnapshot: response.data, mapSource: 'http', lastMapFrameAt: Date.now(), lastMapError: undefined });
+    } else if (response.error === 'no_map') {
+      setState({ mapSnapshot: undefined, mapSource: state.mapStreamConnected ? 'ws' : 'none', lastMapError: response.message ?? response.error });
     }
     return response;
   },
-  async startNavigation() {
-    return run('POST /api/debug/navigation/start', () => debugClient().startNavigation(), 'navigation');
+  startMapStream(downsample = 1) {
+    if (mapSocket) {
+      return;
+    }
+    mapSocket = api().connectMapWebSocket(
+      downsample,
+      (snapshot) => {
+        setState({
+          mapSnapshot: snapshot,
+          mapSource: 'ws',
+          mapStreamConnected: true,
+          lastMapFrameAt: Date.now(),
+          lastMapError: undefined,
+        });
+      },
+      (message, error) => {
+        setState({
+          mapStreamConnected: true,
+          lastMapError: error ? `${message} (${error})` : message,
+        });
+      },
+      () => {
+        mapSocket = null;
+        setState({ mapStreamConnected: false, mapSource: state.mapSnapshot ? 'http' : 'none' });
+      },
+    );
+    setState({ mapStreamConnected: true });
+    addLog('info', '已连接 /ws/map?downsample=1 地图流', undefined, 'WebSocket');
   },
-  async setInitialPose(body: InitialPoseRequest) {
-    return run('POST /api/debug/navigation/set_initial_pose', () => debugClient().setInitialPose(body), 'navigation');
+  stopMapStream() {
+    closeMapSocket();
   },
-  async sendNavigationGoal(body: NavigationGoalRequest) {
-    return run('POST /api/debug/navigation/goal', () => debugClient().sendNavigationGoal(body), 'navigation');
-  },
-  async cancelNavigation() {
-    return run('POST /api/debug/navigation/cancel', () => debugClient().cancelNavigation(), 'navigation');
-  },
-  // ===== Route / Patrol =====
-  async refreshRouteMap() {
-    const response = await run('GET /api/debug/route/map', () => routeClient().getRouteMap());
+  async saveMapping(body: MappingSaveRequest) {
+    const response = await run('POST /api/debug/mapping/save', () => api().saveMapping(body), 'mapSavePending');
     if (response.ok && response.data) {
-      setState({ routeMap: response.data });
-    } else if (!state.mockMode) {
-      addLog('warn', '机器人端未实现 GET /api/debug/route/map，路线地图无法加载', responseDetail(response.error), 'Bridge');
-    }
-    return response;
-  },
-  async refreshActiveRoute() {
-    const response = await run('GET /api/debug/route/active', () => routeClient().getActiveRoute());
-    if (response.ok && response.data) {
-      setState({ activeRoute: response.data });
-    } else if (!state.mockMode) {
-      addLog('warn', '机器人端未实现 GET /api/debug/route/active，路线文件无法加载', responseDetail(response.error), 'Bridge');
-    }
-    return response;
-  },
-  // 组合刷新路线地图 + 活动路线，统一管理 pending.route 避免两个 run 共用 finally 闪烁
-  async refreshRouteView() {
-    setPending('route', true);
-    try {
-      await robotActions.refreshRouteMap();
-      await robotActions.refreshActiveRoute();
-    } finally {
-      setPending('route', false);
-    }
-  },
-  async refreshPatrolStatus() {
-    const response = await run('GET /api/debug/patrol/status', () => patrolClient().getPatrolStatus(), 'patrol');
-    if (response.ok && response.data) {
-      setState({ patrolStatus: response.data });
-    } else if (!state.mockMode) {
-      addLog('warn', '机器人端未实现 GET /api/debug/patrol/status', responseDetail(response.error), 'Bridge');
-    }
-    return response;
-  },
-  async refreshPatrolEvents() {
-    const response = await run('GET /api/debug/patrol/events', () => patrolClient().getPatrolEvents(), 'patrol');
-    if (response.ok && response.data) {
-      setState({ patrolEvents: response.data });
-    } else if (!state.mockMode) {
-      addLog('warn', '机器人端未实现 GET /api/debug/patrol/events', responseDetail(response.error), 'Bridge');
-    }
-    return response;
-  },
-  async startPatrolProcess() {
-    return run('POST /api/debug/patrol/start_process', () => patrolClient().startPatrolProcess(), 'patrol');
-  },
-  async sendPatrolCommand(body: PatrolCommand) {
-    const response = await run('POST /api/debug/patrol/command', () => patrolClient().sendPatrolCommand(body), 'patrol');
-    if (response.ok) {
-      await robotActions.refreshPatrolStatus();
-      await robotActions.refreshPatrolEvents();
-    }
-    return response;
-  },
-  async startPatrol(routeId?: string) {
-    return robotActions.sendPatrolCommand({ command: 'start', route_id: routeId });
-  },
-  async pausePatrol() {
-    return robotActions.sendPatrolCommand({ command: 'pause' });
-  },
-  async resumePatrol() {
-    return robotActions.sendPatrolCommand({ command: 'resume' });
-  },
-  async cancelPatrol() {
-    return robotActions.sendPatrolCommand({ command: 'cancel' });
-  },
-  async reloadPatrolRoute() {
-    return robotActions.sendPatrolCommand({ command: 'reload' });
-  },
-  async initializePatrolPose() {
-    const response = await robotActions.sendPatrolCommand({ command: 'initialize' });
-    const startPose = state.activeRoute?.route?.start_pose;
-    if (startPose) {
-      await robotActions.setInitialPose({ x: startPose.pose.x, y: startPose.pose.y, yaw: startPose.pose.yaw });
+      setState({ savedMap: response.data });
     }
     return response;
   },
   async copyText(label: string, text: string) {
-    setPending('copy', true);
+    setPending('copyPending', true);
     try {
       await Clipboard.setStringAsync(text);
       addLog('user', `${label}已复制为纯文本`, undefined, '复制');
     } catch (error) {
       addLog('error', `${label}复制失败`, error instanceof Error ? error.message : String(error), '复制');
     } finally {
-      setPending('copy', false);
+      setPending('copyPending', false);
     }
   },
   async copyStatusReport() {
     return robotActions.copyText(
       '状态报告',
-      buildStatusReport(state.status, state.debugStatus, state.statusSource, state.mockMode, state.patrolStatus, state.activeRoute),
+      buildStatusReport(state.status, state.debugStatus, state.systemStatus, state.mappingStatus, state.statusSource),
     );
   },
   async copyLogs(mode: 'all' | 'errors' | 'recent50') {

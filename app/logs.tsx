@@ -40,9 +40,9 @@ export default function LogsPage() {
           ))}
         </View>
         <View style={styles.actions}>
-          <AppButton label="复制全部日志" variant="secondary" loading={pending.copy} onPress={() => robotActions.copyLogs('all')} style={styles.action} />
-          <AppButton label="复制错误日志" variant="warning" loading={pending.copy} onPress={() => robotActions.copyLogs('errors')} style={styles.action} />
-          <AppButton label="复制最近 50 条" variant="secondary" loading={pending.copy} onPress={() => robotActions.copyLogs('recent50')} style={styles.action} />
+          <AppButton label="复制全部日志" variant="secondary" loading={pending.copyPending} onPress={() => robotActions.copyLogs('all')} style={styles.action} />
+          <AppButton label="复制错误日志" variant="warning" loading={pending.copyPending} onPress={() => robotActions.copyLogs('errors')} style={styles.action} />
+          <AppButton label="复制最近 50 条" variant="secondary" loading={pending.copyPending} onPress={() => robotActions.copyLogs('recent50')} style={styles.action} />
           <AppButton label="清空日志" variant="danger" onPress={() => robotActions.clearLogs()} style={styles.action} />
         </View>
         <Text style={styles.count}>当前日志数量：{logs.length}</Text>

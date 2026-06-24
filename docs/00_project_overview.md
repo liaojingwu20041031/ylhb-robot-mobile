@@ -20,17 +20,16 @@ Jetson bridge 运行 FastAPI 与 rclpy，负责把手机端请求转换为 ROS2 
 
 ROS2 DDS 更适合机器人内部局域进程通信，手机端直接接入会带来网络发现、QoS、安全边界和移动端依赖复杂度问题。通过 HTTP/WebSocket bridge 可以把移动端协议固定为通用 Web 协议，并把危险动作、限速、急停和白名单命令集中放在 Jetson 端控制。
 
-## Mock Mode 与 Real Robot Mode
+## 真实调试模式
 
-- Mock Mode：默认开启，不访问机器人网络，所有 API 返回模拟数据，用于 UI 预览、按钮测试和日志验证。
-- Real Robot Mode：连接 Jetson bridge，通过 HTTP/WebSocket 获取状态并发送控制命令。
+APP 只连接真实 Jetson bridge，通过 HTTP/WebSocket 获取状态并发送控制命令。不再提供演示数据分支。
 
 ## 第一版功能范围
 
 - 首页/连接页
 - 状态面板
 - 底盘低速手动控制
-- 调试中心
+- 建图调试页
 - 日志页
 - 设置页
 - Jetson HTTP/WebSocket bridge

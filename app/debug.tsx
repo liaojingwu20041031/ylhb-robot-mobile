@@ -1,29 +1,60 @@
-import { useEffect } from 'react';
-import { ChassisTestPanel } from '../src/components/debug/ChassisTestPanel';
-import { DebugLogPanel } from '../src/components/debug/DebugLogPanel';
-import { DebugStatusCard } from '../src/components/debug/DebugStatusCard';
-import { MappingTestPanel } from '../src/components/debug/MappingTestPanel';
-import { SystemProcessPanel } from '../src/components/debug/SystemProcessPanel';
+import { Link } from 'expo-router';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PageContainer } from '../src/components/PageContainer';
-import { robotActions, useRobotStore } from '../src/store/robotStore';
+import { SectionCard } from '../src/components/SectionCard';
+import { colors } from '../src/theme/consoleTheme';
+
+const links = [
+  { href: '/status', title: '状态检查', description: '检查 Bridge、话题、TF、进程、建图和 Nav2。' },
+  { href: '/control', title: '底盘低速控制', description: '真实机器人点动、普通停止和急停。' },
+  { href: '/mapping', title: '建图调试', description: '启动建图、预览地图、低速移动并保存。' },
+  { href: '/logs', title: '日志', description: '查看现场调试请求和错误。' },
+] as const;
 
 export default function DebugPage() {
-  const debugStatus = useRobotStore((snapshot) => snapshot.debugStatus);
-
-  useEffect(() => {
-    robotActions.refreshStatus();
-    robotActions.refreshSystemStatus();
-    robotActions.refreshDebugStatus();
-    robotActions.mappingStatus();
-  }, []);
-
   return (
-    <PageContainer title="APP 调试端" subtitle="电力巡检机器人现场调试：连接、系统进程、底盘低速测试、建图与地图保存。">
-      <SystemProcessPanel />
-      <DebugStatusCard status={debugStatus} />
-      <ChassisTestPanel />
-      <MappingTestPanel />
-      <DebugLogPanel />
+    <PageContainer title="调试入口" subtitle="真实机器人调试页索引。">
+      <SectionCard title="可用工具" description="旧的堆叠调试页已拆成独立流程页面。">
+        <View style={styles.menu}>
+          {links.map((link) => (
+            <Link key={link.href} href={link.href} asChild>
+              <TouchableOpacity style={styles.navButton}>
+                <Text style={styles.navTitle}>{link.title}</Text>
+                <Text style={styles.navDescription}>{link.description}</Text>
+              </TouchableOpacity>
+            </Link>
+          ))}
+        </View>
+      </SectionCard>
     </PageContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  menu: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  navButton: {
+    flex: 1,
+    minWidth: 150,
+    minHeight: 82,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.border,
+    borderWidth: 1,
+    gap: 6,
+  },
+  navTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  navDescription: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+});

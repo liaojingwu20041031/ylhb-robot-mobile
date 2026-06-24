@@ -7,8 +7,7 @@ import { FreshnessBadge } from './FreshnessBadge';
 import { StatusBadge } from './StatusBadge';
 
 export function GlobalSafetyBar() {
-  const { mockMode, status, pending } = useRobotStore((snapshot) => ({
-    mockMode: snapshot.mockMode,
+  const { status, pending } = useRobotStore((snapshot) => ({
     status: snapshot.status,
     pending: snapshot.pending,
   }));
@@ -19,13 +18,13 @@ export function GlobalSafetyBar() {
         <AppButton
           label="全局 STOP"
           variant="danger"
-          loading={pending.stop}
-          onPress={() => robotActions.stop()}
+          loading={pending.controlPending}
+          onPress={() => robotActions.emergencyStop()}
           style={styles.stop}
         />
       </View>
       <View style={styles.grid}>
-        <Metric label="模式" value={mockMode ? 'Mock' : 'Real'} tone={mockMode ? 'warning' : 'danger'} />
+        <Metric label="模式" value="Real" tone="danger" />
         <Metric label="Bridge" value={textOrUnknown(status.connectionState)} tone={stateTone(status.connectionState)} />
         <Metric label="ZLAC/CAN" value={`${textOrUnknown(status.zlacStatus)} / ${textOrUnknown(status.canStatus)}`} tone={stateTone(status.zlacStatus ?? status.canStatus)} />
         <View style={styles.metric}>
@@ -36,13 +35,11 @@ export function GlobalSafetyBar() {
           <Text style={styles.metricLabel}>/scan</Text>
           <FreshnessBadge age={status.lastScanAgeSec} />
         </View>
-        <Metric label="task_status" value={textOrUnknown(status.taskStatus)} tone={stateTone(status.taskStatus)} />
+        <Metric label="mapping" value={textOrUnknown(status.mappingStatus)} tone={stateTone(status.mappingStatus)} />
       </View>
-      {!mockMode ? (
-        <Text style={styles.realWarning} selectable>
-          真机模式会直接向机器人发送控制命令。请确认机器人周围安全，首次测试请架空轮子。
-        </Text>
-      ) : null}
+      <Text style={styles.realWarning} selectable>
+        真实模式会直接向机器人发送控制命令。请确认机器人周围安全，首次测试请架空轮子。
+      </Text>
       {(freshnessTone(status.lastOdomAgeSec) === 'danger' || freshnessTone(status.lastScanAgeSec) === 'danger') ? (
         <Text style={styles.warning} selectable>
           风险提示：关键传感数据过期，禁止进行运动、建图或导航验收。

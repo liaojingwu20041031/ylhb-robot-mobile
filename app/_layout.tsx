@@ -13,10 +13,11 @@ export default function Layout() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: '电力巡检机器人' }} />
-        <Stack.Screen name="dashboard" options={{ title: '系统状态' }} />
+        <Stack.Screen name="index" options={{ title: '真实机器人调试' }} />
+        <Stack.Screen name="status" options={{ title: '状态检查' }} />
         <Stack.Screen name="control" options={{ title: '底盘调试' }} />
-        <Stack.Screen name="debug" options={{ title: 'APP 调试端' }} />
+        <Stack.Screen name="mapping" options={{ title: '建图调试' }} />
+        <Stack.Screen name="debug" options={{ title: '调试入口' }} />
         <Stack.Screen name="logs" options={{ title: '系统日志' }} />
         <Stack.Screen name="settings" options={{ title: '连接设置' }} />
       </Stack>
