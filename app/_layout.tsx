@@ -13,11 +13,10 @@ export default function Layout() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: '智慧零售机器人' }} />
-        <Stack.Screen name="dashboard" options={{ title: '状态监控' }} />
-        <Stack.Screen name="control" options={{ title: '底盘控制' }} />
-        <Stack.Screen name="tasks" options={{ title: '零售任务' }} />
-        <Stack.Screen name="debug" options={{ title: '调试中心' }} />
+        <Stack.Screen name="index" options={{ title: '电力巡检机器人' }} />
+        <Stack.Screen name="dashboard" options={{ title: '系统状态' }} />
+        <Stack.Screen name="control" options={{ title: '底盘调试' }} />
+        <Stack.Screen name="debug" options={{ title: 'APP 调试端' }} />
         <Stack.Screen name="logs" options={{ title: '系统日志' }} />
         <Stack.Screen name="settings" options={{ title: '连接设置' }} />
       </Stack>

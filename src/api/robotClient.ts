@@ -1,46 +1,10 @@
+import { request, trimBaseUrl } from './http';
 import {
   ApiResponse,
   RobotStatus,
   TaskCommand,
   VelocityCommand,
 } from './types';
-
-const trimBaseUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, '');
-
-async function request<T>(
-  baseUrl: string,
-  path: string,
-  options?: RequestInit,
-): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${trimBaseUrl(baseUrl)}${path}`, {
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(options?.headers ?? {}),
-      },
-      ...options,
-    });
-    const json = (await response.json().catch(() => null)) as ApiResponse<T> | T | null;
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: `http_${response.status}`,
-        message: (json as ApiResponse<T> | null)?.message ?? response.statusText,
-      };
-    }
-    if (json && typeof json === 'object' && 'ok' in json) {
-      return json as ApiResponse<T>;
-    }
-    return { ok: true, data: json as T };
-  } catch (error) {
-    return {
-      ok: false,
-      error: 'network_error',
-      message: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
 
 function normalizeStatus(raw: any): RobotStatus {
   return {
@@ -50,12 +14,12 @@ function normalizeStatus(raw: any): RobotStatus {
     zlacStatus: raw.zlacStatus ?? raw.zlac_status,
     systemMode: raw.systemMode ?? raw.system_mode,
     taskStatus: raw.taskStatus ?? raw.task_status,
-    salesDialogueStatus: raw.salesDialogueStatus ?? raw.sales_dialogue_status,
-    cart: typeof raw.cart === 'string' ? raw.cart : raw.cart ? JSON.stringify(raw.cart) : undefined,
     mappingStatus: raw.mappingStatus ?? raw.mapping_status,
     nav2Status: raw.nav2Status ?? raw.nav2_status,
     lastOdomAgeSec: raw.lastOdomAgeSec ?? raw.last_odom_age_sec,
     lastScanAgeSec: raw.lastScanAgeSec ?? raw.last_scan_age_sec,
+    pose: raw.pose ?? null,
+    velocity: raw.velocity ?? null,
     batteryPercent: raw.batteryPercent ?? raw.battery_percent,
     timestamp: raw.timestamp ? Number(raw.timestamp) * (raw.timestamp < 10000000000 ? 1000 : 1) : Date.now(),
   };
@@ -100,7 +64,13 @@ export function createRobotClient(baseUrl: string) {
       const socket = new WebSocket(wsUrl);
       socket.onmessage = (event) => {
         try {
-          onStatus(normalizeStatus(JSON.parse(event.data)));
+          const payload = JSON.parse(event.data);
+          const status = payload && typeof payload === 'object' && 'ok' in payload ? payload.data : payload;
+          if (!status) {
+            onError(payload?.message ?? payload?.error ?? 'WebSocket status payload empty');
+            return;
+          }
+          onStatus(normalizeStatus(status));
         } catch (error) {
           onError(error instanceof Error ? error.message : String(error));
         }

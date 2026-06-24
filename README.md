@@ -1,6 +1,6 @@
 # YLHB Robot Mobile
 
-YLHB Robot Mobile 是智慧零售移动机器人的手机端监控、控制和调试 APP。手机端不直接连接 ROS2 DDS，而是通过 Jetson 上的 HTTP/WebSocket bridge 与 ROS2 通信。
+YLHB Robot Mobile 是电力巡检机器人的手机端调试 APP，用于手机控制底层底盘、控制建图、查看状态等。手机端不直接连接 ROS2 DDS，而是通过 Jetson 上的 HTTP/WebSocket bridge 与 ROS2 通信。
 
 ## 技术栈
 
@@ -33,17 +33,16 @@ npx expo start
 ## 页面说明
 
 - 首页/连接页：显示项目名、连接状态、当前模式和入口按钮。
-- 状态面板：显示 bridge、CAN/ZLAC、/odom、/scan、任务、建图、导航状态。
+- 状态面板：显示 bridge、CAN/ZLAC、/odom、/scan、/imu/data、TF、建图和系统进程状态。
 - 手动控制：短时低速控制、停止和急停。
-- 零售任务：发送起点、货架、结算、拿商品等任务。
-- 调试中心：系统检查、底盘、建图、导航和调试日志。
+- 调试中心：系统进程检查、底盘低速点动、建图、地图快照、地图保存和调试日志。
 - 日志页：统一查看 info/warn/error/api/debug 日志。
 - 设置页：配置 Jetson URL、mock mode、WebSocket。
 
 ## 调试页安全提示
 
 - 第一次底盘测试请架空轮子。
-- 建图/导航测试必须确保机器人周围安全。
+- 建图测试必须确保机器人周围安全。
 - 所有速度命令都是短时命令，后端会自动停车。
 - 急停按钮会调用 `/api/stop`。
 

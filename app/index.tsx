@@ -1,23 +1,21 @@
 import { Link } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { FreshnessBadge } from '../src/components/FreshnessBadge';
 import { HelpText } from '../src/components/HelpText';
 import { PageContainer } from '../src/components/PageContainer';
 import { SectionCard } from '../src/components/SectionCard';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { StatusCard } from '../src/components/StatusCard';
 import { colors } from '../src/theme/consoleTheme';
-import { buildNextStep, stateTone, textOrUnknown } from '../src/utils/status';
+import { buildNextStep, stateTone } from '../src/utils/status';
 import { robotActions, useRobotStore } from '../src/store/robotStore';
 
 const routes = [
-  { href: '/dashboard', title: '状态监控', description: '查看 ROS2 链路、新鲜度和状态来源。' },
-  { href: '/control', title: '底盘控制', description: '低速点动测试，含控制锁和急停。' },
-  { href: '/tasks', title: '零售任务', description: '发送区域移动和商品取货中文命令。' },
-  { href: '/debug', title: '调试中心', description: '建图、导航、底盘和任务层专项检查。' },
-  { href: '/logs', title: '系统日志', description: '复制错误、API 和用户操作日志。' },
-  { href: '/settings', title: '连接设置', description: '配置 Jetson 地址、Mock/真机和刷新策略。' },
+  { href: '/debug', title: 'APP 调试端', description: '启动底盘、低速点动、建图、地图预览与保存。' },
+  { href: '/control', title: '底盘控制', description: '按 /odom、/scan、/imu/data 与 TF 锁定低速方向按钮。' },
+  { href: '/dashboard', title: '系统状态', description: 'Bridge、ROS 话题、节点和数据新鲜度总览。' },
+  { href: '/logs', title: '系统日志', description: '查看 API、错误和用户操作日志。' },
+  { href: '/settings', title: '连接设置', description: '配置 Jetson Base URL、Mock/真机和 WebSocket。' },
 ] as const;
 
 export default function IndexPage() {
@@ -33,28 +31,16 @@ export default function IndexPage() {
   }, []);
 
   return (
-    <PageContainer title="YLHB 智慧零售机器人" subtitle="手机工程控制台">
+    <PageContainer title="电力巡检机器人" subtitle="面向 mobile_bridge 的现场调试控制台">
       <SectionCard
         title="运行总览"
-        description="第一屏集中显示关键链路。未知字段会显示为未知，不会假装正常。"
+        description="第一屏集中显示连接、模式与系统总体健康；调试流程优先进入「APP 调试端」。"
         summary={<StatusBadge label={mockMode ? 'Mock Mode' : 'Real Robot Mode'} tone={mockMode ? 'warning' : 'danger'} />}
       >
         <View style={styles.grid}>
           <StatusCard title="当前模式" value={mockMode ? 'Mock Mode' : 'Real Robot Mode'} tone={mockMode ? 'warning' : 'danger'} />
           <StatusCard title="Bridge" value={status.connectionState} tone={stateTone(status.connectionState)} />
-          <StatusCard title="ZLAC" value={status.zlacStatus} tone={stateTone(status.zlacStatus)} />
-          <View style={styles.freshCard}>
-            <Text style={styles.freshTitle}>/scan</Text>
-            <FreshnessBadge age={status.lastScanAgeSec} />
-          </View>
-          <View style={styles.freshCard}>
-            <Text style={styles.freshTitle}>/odom</Text>
-            <FreshnessBadge age={status.lastOdomAgeSec} />
-          </View>
-          <StatusCard title="system_mode" value={status.systemMode} />
-          <StatusCard title="task_status" value={status.taskStatus} />
-          <StatusCard title="mapping" value={status.mappingStatus} />
-          <StatusCard title="navigation" value={status.nav2Status} />
+          <StatusCard title="系统总体健康" value={status.online ? '在线' : '离线'} tone={status.online ? 'success' : 'danger'} />
         </View>
       </SectionCard>
 
@@ -71,11 +57,8 @@ export default function IndexPage() {
         </View>
       </SectionCard>
 
-      <SectionCard title="下一步建议" description="根据 Bridge、传感器、地图和导航状态自动给出验收建议。">
+      <SectionCard title="下一步建议" description="根据 Bridge、传感器、底盘和建图状态自动给出调试建议。">
         <HelpText tone="info">{buildNextStep(status, debugStatus)}</HelpText>
-        <Text style={styles.smallText} selectable>
-          当前 task_status：{textOrUnknown(status.taskStatus)}
-        </Text>
       </SectionCard>
     </PageContainer>
   );
@@ -86,20 +69,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     flexWrap: 'wrap',
-  },
-  freshCard: {
-    flex: 1,
-    minWidth: 142,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    gap: 8,
-  },
-  freshTitle: {
-    color: colors.textMuted,
-    fontWeight: '800',
   },
   menu: {
     flexDirection: 'row',
@@ -126,9 +95,5 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     lineHeight: 17,
-  },
-  smallText: {
-    color: colors.textMuted,
-    fontSize: 12,
   },
 });

@@ -2,11 +2,11 @@
 
 ## 用途
 
-调试页用于现场工程测试，覆盖系统检查、底盘测试、建图测试、导航测试和调试日志。
+调试页用于现场工程测试，覆盖系统进程、底盘测试、建图测试、地图快照、地图保存和调试日志。
 
 ## 系统检查模块
 
-显示 `/cmd_vel`、`/odom`、`/scan`、`/map` 是否可用，显示 `zlac8015d_canopen_controller`、`slam_toolbox`、Nav2 相关节点是否存在，并显示 `/odom` 与 `/scan` 更新时间。
+显示 `/cmd_vel`、`/odom`、`/scan`、`/imu/data`、`/map` 和 TF 是否可用，显示 `bringup`、`zlac8015d_canopen_controller`、`rplidar_node`、`imu`、`slam_toolbox` 状态，并显示 `/odom`、`/scan`、`/imu/data`、`/map` 更新时间。
 
 对应 API：`GET /api/debug/status`
 
@@ -41,33 +41,12 @@
 对应 API：
 
 - `GET /api/debug/mapping/status`
-- `POST /api/debug/mapping/start`
+- `POST /api/debug/system/start/mapping`
+- `GET /api/debug/mapping/map_snapshot?downsample=1`
 - `POST /api/debug/mapping/save`
-- `POST /api/debug/mapping/stop`
+- `POST /api/debug/system/stop/mapping`
 
 安全边界：只允许启动 `./scripts/run_on_jetson.sh mapping`；只停止 bridge 自己启动的 mapping 进程。
-
-## 导航测试模块
-
-按钮和输入：
-
-- 检查导航依赖
-- 启动导航
-- 设置初始位姿
-- 输入 x/y/yaw
-- 发送目标点
-- 起点区、货架区、结算区预设目标
-- 取消导航
-
-对应 API：
-
-- `GET /api/debug/navigation/status`
-- `POST /api/debug/navigation/start`
-- `POST /api/debug/navigation/set_initial_pose`
-- `POST /api/debug/navigation/goal`
-- `POST /api/debug/navigation/cancel`
-
-安全边界：导航前确保地图与定位可用，机器人周围无人和障碍风险可控。
 
 ## 调试日志模块
 

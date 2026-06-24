@@ -4,8 +4,9 @@
 
 - 启动 APP。
 - 确认首页显示 Mock。
-- 打开所有页面。
-- 点击手动控制、任务、调试页按钮，确认日志有反馈。
+- 确认首页只显示 APP 调试端、底盘控制、系统状态、系统日志、连接设置。
+- 切换正常、雷达故障、底盘故障、建图中、无地图/等待地图场景。
+- 点击底盘控制和调试页按钮，确认日志有反馈；故障场景下方向按钮保持锁定。
 
 ## Jetson API curl 测试
 
@@ -34,19 +35,12 @@ curl -X POST http://<jetson_ip>:8000/api/cmd_vel \
 ## 建图测试
 
 - `GET /api/debug/mapping/status`
-- `POST /api/debug/mapping/start`
+- `POST /api/debug/system/start/mapping`
+- `GET /api/debug/mapping/map_snapshot?downsample=1`
 - `POST /api/debug/mapping/save`
-- `POST /api/debug/mapping/stop`
+- `POST /api/debug/system/stop/mapping`
 
-确认 `~/ros2_ws/src/my_map.yaml` 和 `my_map.pgm` 存在。
-
-## 导航测试
-
-- `GET /api/debug/navigation/status`
-- `POST /api/debug/navigation/start`
-- `POST /api/debug/navigation/set_initial_pose`
-- `POST /api/debug/navigation/goal`
-- `POST /api/debug/navigation/cancel`
+确认 `/home/nvidia/ros2_DL/maps/my_map.yaml` 和 `my_map.pgm` 存在。
 
 ## 急停测试
 
@@ -63,4 +57,4 @@ curl -X POST http://<jetson_ip>:8000/api/stop
 - API 不通：检查 URL、端口、bridge 状态。
 - `/cmd_vel` 没反应：检查 bringup 和话题名。
 - 建图不启动：检查 `scripts/run_on_jetson.sh mapping` 是否可执行。
-- 导航目标无反馈：检查 Nav2 action server 和地图。
+- `no_map`：建图刚启动或 `/map` 未发布，继续等待并手动刷新地图快照。

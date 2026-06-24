@@ -12,9 +12,11 @@ import { buildDiagnostics, freshnessTone, stateTone, textOrUnknown } from '../sr
 import { robotActions, useRobotStore } from '../src/store/robotStore';
 
 export default function DashboardPage() {
-  const { status, debugStatus, websocketEnabled, statusSource, pending, mockMode } = useRobotStore((snapshot) => ({
+  const { status, debugStatus, systemStatus, mappingStatus, websocketEnabled, statusSource, pending, mockMode } = useRobotStore((snapshot) => ({
     status: snapshot.status,
     debugStatus: snapshot.debugStatus,
+    systemStatus: snapshot.systemStatus,
+    mappingStatus: snapshot.mappingDebugStatus,
     websocketEnabled: snapshot.websocketEnabled,
     statusSource: snapshot.statusSource,
     pending: snapshot.pending,
@@ -24,6 +26,8 @@ export default function DashboardPage() {
   useEffect(() => {
     robotActions.refreshStatus();
     robotActions.refreshDebugStatus();
+    robotActions.refreshSystemStatus();
+    robotActions.mappingStatus();
     if (websocketEnabled) {
       robotActions.startStatusSocket();
       return () => robotActions.stopStatusSocket();
@@ -35,7 +39,7 @@ export default function DashboardPage() {
   const node = (name: string) => debugStatus?.nodes?.[name];
 
   return (
-    <PageContainer title="状态监控" subtitle="按 ROS2 链路分组显示，后端缺字段时显示未知。">
+    <PageContainer title="状态监控" subtitle="面向 mobile_bridge 调试阶段，显示连接、底盘、传感器、建图与进程状态。">
       <SectionCard
         title="刷新与来源"
         description="状态来源可能是 Mock、WebSocket 或 HTTP Polling。"
@@ -59,35 +63,30 @@ export default function DashboardPage() {
         <StatusCard title="CAN status" value={status.canStatus} />
         <StatusCard title="/cmd_vel" value={topic('/cmd_vel')} tone={stateTone(topic('/cmd_vel'))} />
       </LinkGroup>
-      <LinkGroup title="感知链路" description="雷达数据与扫描参数。">
+      <LinkGroup title="感知链路" description="雷达数据与扫描新鲜度。">
         <FreshMetric title="/scan 新鲜度" age={status.lastScanAgeSec ?? debugStatus?.lastScanAgeSec} />
         <StatusCard title="/scan" value={topic('/scan')} tone={stateTone(topic('/scan'))} />
-        <StatusCard title="range_min/range_max" value={debugStatus?.scanRangeMin !== undefined ? `${debugStatus.scanRangeMin}/${debugStatus.scanRangeMax}` : undefined} />
       </LinkGroup>
-      <LinkGroup title="定位链路" description="里程计、TF 与定位基础状态。">
+      <LinkGroup title="定位链路" description="里程计与定位基础状态。">
         <FreshMetric title="/odom 新鲜度" age={status.lastOdomAgeSec ?? debugStatus?.lastOdomAgeSec} />
         <StatusCard title="/odom" value={topic('/odom')} tone={stateTone(topic('/odom'))} />
+        <FreshMetric title="/imu/data 新鲜度" age={debugStatus?.lastImuAgeSec ?? undefined} />
+        <StatusCard title="/imu/data" value={topic('/imu/data')} tone={stateTone(topic('/imu/data'))} />
         <StatusCard title="TF" value={node('tf')} tone={stateTone(node('tf'))} />
       </LinkGroup>
       <LinkGroup title="建图链路" description="slam_toolbox 与 /map 发布状态。">
-        <StatusCard title="mapping" value={status.mappingStatus ?? debugStatus?.mappingStatus} />
+        <StatusCard title="mapping" value={mappingStatus?.mappingStatus ?? status.mappingStatus ?? debugStatus?.mappingStatus} />
+        <StatusCard title="bringup_ready" value={mappingStatus?.bringupReady} tone={stateTone(mappingStatus?.bringupReady)} />
+        <StatusCard title="map_available" value={mappingStatus?.mapAvailable} tone={stateTone(mappingStatus?.mapAvailable)} />
         <StatusCard title="slam_toolbox" value={node('slam_toolbox')} tone={stateTone(node('slam_toolbox'))} />
         <StatusCard title="/map" value={topic('/map')} tone={stateTone(topic('/map'))} />
       </LinkGroup>
-      <LinkGroup title="导航链路" description="Nav2、AMCL、规划器与控制器状态。">
-        <StatusCard title="navigation" value={status.nav2Status ?? debugStatus?.nav2Status} />
-        <StatusCard title="AMCL" value={node('amcl')} tone={stateTone(node('amcl'))} />
-        <StatusCard title="planner_server" value={node('planner_server')} tone={stateTone(node('planner_server'))} />
-        <StatusCard title="controller_server" value={node('controller_server')} tone={stateTone(node('controller_server'))} />
-        <StatusCard title="bt_navigator" value={node('bt_navigator')} tone={stateTone(node('bt_navigator'))} />
-      </LinkGroup>
-      <LinkGroup title="零售任务链路" description="任务层状态来自 bridge，缺字段保持未知。">
+      <LinkGroup title="系统进程" description="由 mobile_bridge 管理的 bringup 与 mapping 进程。">
         <StatusCard title="system_mode" value={status.systemMode ?? debugStatus?.systemMode} />
-        <StatusCard title="task_status" value={status.taskStatus ?? debugStatus?.taskStatus} />
-        <StatusCard title="cart" value={status.cart ?? debugStatus?.cart} />
-      </LinkGroup>
-      <LinkGroup title="语音链路" description="销售对话状态，后端未提供时显示未知。">
-        <StatusCard title="sales_dialogue_status" value={status.salesDialogueStatus ?? debugStatus?.salesDialogueStatus} />
+        <StatusCard title="bringup running" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
+        <StatusCard title="bringup PID" value={systemStatus?.bringup?.pid ?? '无'} />
+        <StatusCard title="mapping running" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
+        <StatusCard title="mapping PID" value={systemStatus?.mapping?.pid ?? '无'} />
       </LinkGroup>
       <SectionCard title="故障诊断建议" description="根据新鲜度、话题和节点状态给出下一步排查方向。">
         {buildDiagnostics(status, debugStatus).map((tip) => <HelpText key={tip} tone={tip.includes('可用') ? 'success' : 'warning'}>{tip}</HelpText>)}

@@ -1,48 +1,17 @@
+import { request } from './http';
 import {
   ApiResponse,
   ChassisTestRequest,
   DebugStatus,
   InitialPoseRequest,
+  MapSnapshot,
   MappingSaveRequest,
+  MappingStatus,
   NavigationGoalRequest,
+  ProcessMode,
+  SavedMap,
+  SystemStatus,
 } from './types';
-
-const trimBaseUrl = (baseUrl: string) => baseUrl.replace(/\/+$/, '');
-
-async function request<T>(
-  baseUrl: string,
-  path: string,
-  options?: RequestInit,
-): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${trimBaseUrl(baseUrl)}${path}`, {
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(options?.headers ?? {}),
-      },
-      ...options,
-    });
-    const json = (await response.json().catch(() => null)) as ApiResponse<T> | T | null;
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: `http_${response.status}`,
-        message: (json as ApiResponse<T> | null)?.message ?? response.statusText,
-      };
-    }
-    if (json && typeof json === 'object' && 'ok' in json) {
-      return json as ApiResponse<T>;
-    }
-    return { ok: true, data: json as T };
-  } catch (error) {
-    return {
-      ok: false,
-      error: 'network_error',
-      message: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
 
 function normalizeDebugStatus(raw: any): DebugStatus {
   return {
@@ -52,6 +21,7 @@ function normalizeDebugStatus(raw: any): DebugStatus {
     lastOdomAgeSec: raw.lastOdomAgeSec ?? raw.last_odom_age_sec,
     lastScanAgeSec: raw.lastScanAgeSec ?? raw.last_scan_age_sec,
     lastMapAgeSec: raw.lastMapAgeSec ?? raw.last_map_age_sec,
+    lastImuAgeSec: raw.lastImuAgeSec ?? raw.last_imu_age_sec,
     scanRangeMin: raw.scanRangeMin ?? raw.scan_range_min,
     scanRangeMax: raw.scanRangeMax ?? raw.scan_range_max,
     zlacStatus: raw.zlacStatus ?? raw.zlac_status,
@@ -59,13 +29,34 @@ function normalizeDebugStatus(raw: any): DebugStatus {
     nav2Status: raw.nav2Status ?? raw.nav2_status,
     taskStatus: raw.taskStatus ?? raw.task_status,
     systemMode: raw.systemMode ?? raw.system_mode,
-    salesDialogueStatus: raw.salesDialogueStatus ?? raw.sales_dialogue_status,
-    cart: typeof raw.cart === 'string' ? raw.cart : raw.cart ? JSON.stringify(raw.cart) : undefined,
+    pose: raw.pose ?? null,
+    velocity: raw.velocity ?? null,
+    mapMeta: raw.mapMeta ?? raw.map_meta ?? null,
+  };
+}
+
+function normalizeMappingStatus(raw: any): MappingStatus {
+  return {
+    mappingStatus: raw.mappingStatus ?? raw.mapping_status ?? 'not_running',
+    bringupReady: Boolean(raw.bringupReady ?? raw.bringup_ready),
+    mapAvailable: Boolean(raw.mapAvailable ?? raw.map_available),
+    recommendedNextAction: raw.recommendedNextAction ?? raw.recommended_next_action ?? 'start_bringup',
+    process: raw.process ?? null,
+    lastMapAgeSec: raw.lastMapAgeSec ?? raw.last_map_age_sec,
+    mapMeta: raw.mapMeta ?? raw.map_meta ?? null,
   };
 }
 
 export function createDebugClient(baseUrl: string) {
+  const systemProcess = (action: 'start' | 'stop', mode: ProcessMode) =>
+    request<null>(baseUrl, `/api/debug/system/${action}/${mode}`, { method: 'POST' });
+
   return {
+    getSystemStatus: () => request<SystemStatus>(baseUrl, '/api/debug/system/status'),
+    startBringup: () => systemProcess('start', 'bringup'),
+    stopBringup: () => systemProcess('stop', 'bringup'),
+    startMappingProcess: () => systemProcess('start', 'mapping'),
+    stopMappingProcess: () => systemProcess('stop', 'mapping'),
     getDebugStatus: async () => {
       const response = await request<any>(baseUrl, '/api/debug/status');
       return response.ok && response.data
@@ -84,22 +75,18 @@ export function createDebugClient(baseUrl: string) {
     getMappingStatus: async () => {
       const response = await request<any>(baseUrl, '/api/debug/mapping/status');
       return response.ok && response.data
-        ? { ...response, data: normalizeDebugStatus(response.data) }
-        : (response as ApiResponse<DebugStatus>);
+        ? { ...response, data: normalizeMappingStatus(response.data) }
+        : (response as ApiResponse<MappingStatus>);
     },
-    startMapping: () =>
-      request<null>(baseUrl, '/api/debug/mapping/start', {
-        method: 'POST',
-      }),
+    startMapping: () => systemProcess('start', 'mapping'),
     saveMapping: (body: MappingSaveRequest = {}) =>
-      request<{ yaml_path: string; pgm_path: string }>(baseUrl, '/api/debug/mapping/save', {
+      request<SavedMap>(baseUrl, '/api/debug/mapping/save', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    stopMapping: () =>
-      request<null>(baseUrl, '/api/debug/mapping/stop', {
-        method: 'POST',
-      }),
+    stopMapping: () => systemProcess('stop', 'mapping'),
+    getMapSnapshot: (downsample = 1) =>
+      request<MapSnapshot>(baseUrl, `/api/debug/mapping/map_snapshot?downsample=${downsample}`),
     getNavigationStatus: async () => {
       const response = await request<any>(baseUrl, '/api/debug/navigation/status');
       return response.ok && response.data

@@ -9,10 +9,11 @@
 - `app/index.tsx`：首页/连接页
 - `app/dashboard.tsx`：状态面板
 - `app/control.tsx`：手动控制
-- `app/tasks.tsx`：零售任务
 - `app/debug.tsx`：调试中心
 - `app/logs.tsx`：日志页
 - `app/settings.tsx`：设置页
+
+`app/tasks.tsx`、`app/route.tsx` 及相关 route/patrol client 代码当前保留在仓库中，但不从首页和 Stack 暴露；本阶段以 `mobile_debug_api.md` 的底盘和建图调试接口为准。
 
 ## 目录职责
 

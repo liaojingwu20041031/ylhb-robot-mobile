@@ -1,8 +1,9 @@
+import { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, ConsoleTone, radius, toneColors } from '../theme/consoleTheme';
 
 type Props = {
-  children: string;
+  children: ReactNode;
   tone?: ConsoleTone;
 };
 

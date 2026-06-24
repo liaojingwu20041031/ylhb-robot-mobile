@@ -15,15 +15,31 @@ function command(linear_x: number, angular_z: number) {
 }
 
 export function ControlPad() {
-  const { status, pending } = useRobotStore((snapshot) => ({
+  const { status, debugStatus, pending } = useRobotStore((snapshot) => ({
     status: snapshot.status,
+    debugStatus: snapshot.debugStatus,
     pending: snapshot.pending,
   }));
   const [unlocked, setUnlocked] = useState(false);
   const lastSentRef = useRef(0);
 
   const bridgeReady = status.online && status.connectionState === 'connected';
-  const fresh = freshnessTone(status.lastOdomAgeSec) !== 'danger' && freshnessTone(status.lastScanAgeSec) !== 'danger';
+  const topics = debugStatus?.topics ?? {};
+  const nodes = debugStatus?.nodes ?? {};
+  const odomAge = debugStatus?.lastOdomAgeSec ?? status.lastOdomAgeSec;
+  const scanAge = debugStatus?.lastScanAgeSec ?? status.lastScanAgeSec;
+  const imuAge = debugStatus?.lastImuAgeSec;
+  const fresh =
+    topics['/odom'] &&
+    topics['/scan'] &&
+    topics['/imu/data'] &&
+    nodes.tf &&
+    odomAge != null &&
+    scanAge != null &&
+    imuAge != null &&
+    freshnessTone(odomAge) !== 'danger' &&
+    freshnessTone(scanAge) !== 'danger' &&
+    freshnessTone(imuAge) !== 'danger';
   const movementDisabled = !unlocked || !bridgeReady || !fresh || pending.velocity;
 
   useEffect(() => {
@@ -36,7 +52,7 @@ export function ControlPad() {
 
   const blockReason = useMemo(() => {
     if (!bridgeReady) return 'Bridge 断开或未连接，运动按钮已禁用。';
-    if (!fresh) return '关键状态过期，运动按钮已禁用。';
+    if (!fresh) return '底盘前置条件未就绪：需要 /odom、/scan、/imu/data、TF 且数据新鲜。';
     if (!unlocked) return '控制锁已锁定，解锁后才能发送运动命令。';
     return '控制已解锁，10 秒无操作会自动上锁。';
   }, [bridgeReady, fresh, unlocked]);

@@ -1,8 +1,10 @@
 import * as Clipboard from 'expo-clipboard';
 import { useSyncExternalStore } from 'react';
 import { createDebugClient } from '../api/debugClient';
-import { mockDebugClient, mockRobotClient, setMockScenario } from '../api/mockClient';
+import { mockDebugClient, mockPatrolClient, mockRobotClient, mockRouteClient, setMockScenario } from '../api/mockClient';
+import { createPatrolClient } from '../api/patrolClient';
 import { createRobotClient, StatusSocket } from '../api/robotClient';
+import { createRouteClient } from '../api/routeClient';
 import {
   ApiResponse,
   AppLog,
@@ -11,12 +13,20 @@ import {
   ConnectionTestResult,
   DebugStatus,
   InitialPoseRequest,
+  MapSnapshot,
   MappingSaveRequest,
+  MappingStatus,
   MockScenario,
   NavigationGoalRequest,
+  PatrolCommand,
+  PatrolEvent,
+  PatrolRouteActiveResponse,
+  PatrolRouteMapInfo,
+  PatrolStatus,
   PendingState,
   RobotStatus,
   StatusSource,
+  SystemStatus,
   TaskCommand,
   VelocityCommand,
 } from '../api/types';
@@ -31,6 +41,13 @@ type StoreState = {
   statusSource: StatusSource;
   status: RobotStatus;
   debugStatus?: DebugStatus;
+  systemStatus?: SystemStatus;
+  mappingDebugStatus?: MappingStatus;
+  mapSnapshot?: MapSnapshot;
+  routeMap?: PatrolRouteMapInfo;
+  activeRoute?: PatrolRouteActiveResponse;
+  patrolStatus?: PatrolStatus;
+  patrolEvents: PatrolEvent[];
   logs: AppLog[];
   pending: PendingState;
   httpTest?: ConnectionTestResult;
@@ -49,9 +66,12 @@ const initialPending: PendingState = {
   velocity: false,
   task: false,
   debug: false,
+  system: false,
   mapping: false,
   navigation: false,
   copy: false,
+  route: false,
+  patrol: false,
 };
 
 let state: StoreState = {
@@ -62,6 +82,7 @@ let state: StoreState = {
   refreshIntervalMs: 1000,
   statusSource: '未知',
   status: initialStatus,
+  patrolEvents: [],
   logs: [],
   pending: initialPending,
 };
@@ -102,11 +123,23 @@ function debugClient() {
   return state.mockMode ? mockDebugClient : createDebugClient(state.baseUrl);
 }
 
+function routeClient() {
+  return state.mockMode ? mockRouteClient : createRouteClient(state.baseUrl);
+}
+
+function patrolClient() {
+  return state.mockMode ? mockPatrolClient : createPatrolClient(state.baseUrl);
+}
+
+function responseDetail(value: string | null | undefined) {
+  return value ?? undefined;
+}
+
 function applyResponse<T>(label: string, response: ApiResponse<T>) {
   if (response.ok) {
     addLog('api', `${label}: ${response.message ?? 'ok'}`, undefined, state.mockMode ? 'Mock' : 'Bridge');
   } else {
-    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, response.error, state.mockMode ? 'Mock' : 'Bridge');
+    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, responseDetail(response.error), state.mockMode ? 'Mock' : 'Bridge');
   }
 }
 
@@ -156,6 +189,9 @@ export const robotActions = {
     addLog('debug', `Mock 演示场景切换：${scenario}`, undefined, 'Mock');
     await robotActions.refreshStatus();
     await robotActions.refreshDebugStatus();
+    await robotActions.refreshSystemStatus();
+    await robotActions.mappingStatus();
+    setState({ mapSnapshot: undefined });
   },
   async refreshStatus() {
     setState({ status: { ...state.status, connectionState: 'connecting' } });
@@ -247,6 +283,29 @@ export const robotActions = {
   async stop() {
     return run('POST /api/stop', () => robotClient().stop(), 'stop');
   },
+  async refreshSystemStatus() {
+    const response = await run('GET /api/debug/system/status', () => debugClient().getSystemStatus(), 'system');
+    if (response.ok && response.data) {
+      setState({ systemStatus: response.data });
+    }
+    return response;
+  },
+  async startBringup() {
+    const response = await run('POST /api/debug/system/start/bringup', () => debugClient().startBringup(), 'system');
+    await robotActions.refreshSystemStatus();
+    await robotActions.refreshDebugStatus();
+    return response;
+  },
+  async stopBringup() {
+    if (state.systemStatus?.mapping?.running) {
+      addLog('warn', '停止底盘前先停止 mapping 进程', undefined, '系统进程');
+      await robotActions.stopMapping();
+    }
+    const response = await run('POST /api/debug/system/stop/bringup', () => debugClient().stopBringup(), 'system');
+    await robotActions.refreshSystemStatus();
+    await robotActions.refreshDebugStatus();
+    return response;
+  },
   async refreshDebugStatus() {
     const response = await run('GET /api/debug/status', () => debugClient().getDebugStatus(), 'debug');
     if (response.ok && response.data) {
@@ -263,18 +322,33 @@ export const robotActions = {
   async mappingStatus() {
     const response = await run('GET /api/debug/mapping/status', () => debugClient().getMappingStatus(), 'mapping');
     if (response.ok && response.data) {
-      setState({ debugStatus: response.data });
+      setState({ mappingDebugStatus: response.data });
     }
     return response;
   },
   async startMapping() {
-    return run('POST /api/debug/mapping/start', () => debugClient().startMapping(), 'mapping');
+    const response = await run('POST /api/debug/system/start/mapping', () => debugClient().startMapping(), 'mapping');
+    await robotActions.refreshSystemStatus();
+    await robotActions.mappingStatus();
+    return response;
   },
   async saveMapping(body: MappingSaveRequest) {
     return run('POST /api/debug/mapping/save', () => debugClient().saveMapping(body), 'mapping');
   },
+  async refreshMapSnapshot(downsample = 1) {
+    const response = await run(`GET /api/debug/mapping/map_snapshot?downsample=${downsample}`, () => debugClient().getMapSnapshot(downsample), 'mapping');
+    if (response.ok && response.data) {
+      setState({ mapSnapshot: response.data });
+    } else if (response.error === 'no_map') {
+      setState({ mapSnapshot: undefined });
+    }
+    return response;
+  },
   async stopMapping() {
-    return run('POST /api/debug/mapping/stop', () => debugClient().stopMapping(), 'mapping');
+    const response = await run('POST /api/debug/system/stop/mapping', () => debugClient().stopMapping(), 'mapping');
+    await robotActions.refreshSystemStatus();
+    await robotActions.mappingStatus();
+    return response;
   },
   async navigationStatus() {
     const response = await run('GET /api/debug/navigation/status', () => debugClient().getNavigationStatus(), 'navigation');
@@ -295,6 +369,87 @@ export const robotActions = {
   async cancelNavigation() {
     return run('POST /api/debug/navigation/cancel', () => debugClient().cancelNavigation(), 'navigation');
   },
+  // ===== Route / Patrol =====
+  async refreshRouteMap() {
+    const response = await run('GET /api/debug/route/map', () => routeClient().getRouteMap());
+    if (response.ok && response.data) {
+      setState({ routeMap: response.data });
+    } else if (!state.mockMode) {
+      addLog('warn', '机器人端未实现 GET /api/debug/route/map，路线地图无法加载', responseDetail(response.error), 'Bridge');
+    }
+    return response;
+  },
+  async refreshActiveRoute() {
+    const response = await run('GET /api/debug/route/active', () => routeClient().getActiveRoute());
+    if (response.ok && response.data) {
+      setState({ activeRoute: response.data });
+    } else if (!state.mockMode) {
+      addLog('warn', '机器人端未实现 GET /api/debug/route/active，路线文件无法加载', responseDetail(response.error), 'Bridge');
+    }
+    return response;
+  },
+  // 组合刷新路线地图 + 活动路线，统一管理 pending.route 避免两个 run 共用 finally 闪烁
+  async refreshRouteView() {
+    setPending('route', true);
+    try {
+      await robotActions.refreshRouteMap();
+      await robotActions.refreshActiveRoute();
+    } finally {
+      setPending('route', false);
+    }
+  },
+  async refreshPatrolStatus() {
+    const response = await run('GET /api/debug/patrol/status', () => patrolClient().getPatrolStatus(), 'patrol');
+    if (response.ok && response.data) {
+      setState({ patrolStatus: response.data });
+    } else if (!state.mockMode) {
+      addLog('warn', '机器人端未实现 GET /api/debug/patrol/status', responseDetail(response.error), 'Bridge');
+    }
+    return response;
+  },
+  async refreshPatrolEvents() {
+    const response = await run('GET /api/debug/patrol/events', () => patrolClient().getPatrolEvents(), 'patrol');
+    if (response.ok && response.data) {
+      setState({ patrolEvents: response.data });
+    } else if (!state.mockMode) {
+      addLog('warn', '机器人端未实现 GET /api/debug/patrol/events', responseDetail(response.error), 'Bridge');
+    }
+    return response;
+  },
+  async startPatrolProcess() {
+    return run('POST /api/debug/patrol/start_process', () => patrolClient().startPatrolProcess(), 'patrol');
+  },
+  async sendPatrolCommand(body: PatrolCommand) {
+    const response = await run('POST /api/debug/patrol/command', () => patrolClient().sendPatrolCommand(body), 'patrol');
+    if (response.ok) {
+      await robotActions.refreshPatrolStatus();
+      await robotActions.refreshPatrolEvents();
+    }
+    return response;
+  },
+  async startPatrol(routeId?: string) {
+    return robotActions.sendPatrolCommand({ command: 'start', route_id: routeId });
+  },
+  async pausePatrol() {
+    return robotActions.sendPatrolCommand({ command: 'pause' });
+  },
+  async resumePatrol() {
+    return robotActions.sendPatrolCommand({ command: 'resume' });
+  },
+  async cancelPatrol() {
+    return robotActions.sendPatrolCommand({ command: 'cancel' });
+  },
+  async reloadPatrolRoute() {
+    return robotActions.sendPatrolCommand({ command: 'reload' });
+  },
+  async initializePatrolPose() {
+    const response = await robotActions.sendPatrolCommand({ command: 'initialize' });
+    const startPose = state.activeRoute?.route?.start_pose;
+    if (startPose) {
+      await robotActions.setInitialPose({ x: startPose.pose.x, y: startPose.pose.y, yaw: startPose.pose.yaw });
+    }
+    return response;
+  },
   async copyText(label: string, text: string) {
     setPending('copy', true);
     try {
@@ -309,7 +464,7 @@ export const robotActions = {
   async copyStatusReport() {
     return robotActions.copyText(
       '状态报告',
-      buildStatusReport(state.status, state.debugStatus, state.statusSource, state.mockMode),
+      buildStatusReport(state.status, state.debugStatus, state.statusSource, state.mockMode, state.patrolStatus, state.activeRoute),
     );
   },
   async copyLogs(mode: 'all' | 'errors' | 'recent50') {

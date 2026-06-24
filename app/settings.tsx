@@ -14,8 +14,7 @@ const scenarios: Array<{ key: MockScenario; label: string }> = [
   { key: 'scan_fault', label: '雷达故障' },
   { key: 'chassis_fault', label: '底盘故障' },
   { key: 'mapping', label: '建图中' },
-  { key: 'navigation', label: '导航中' },
-  { key: 'task_running', label: '任务执行中' },
+  { key: 'no_map', label: '无地图/等待地图' },
 ];
 
 export default function SettingsPage() {
@@ -50,7 +49,7 @@ export default function SettingsPage() {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.label}>WebSocket 开关</Text>
-            <Text style={styles.hint}>开启后尝试从 /ws/status 接收状态。</Text>
+            <Text style={styles.hint}>开启后尝试从 /ws/status 接收状态；地图预览仍使用 HTTP 手动刷新。</Text>
           </View>
           <Switch value={websocketEnabled} onValueChange={setWebsocketEnabled} />
         </View>
@@ -61,6 +60,7 @@ export default function SettingsPage() {
         {!mockMode ? (
           <HelpText tone="danger">真机模式会直接向机器人发送控制命令。请确认机器人周围安全，首次测试请架空轮子。</HelpText>
         ) : null}
+        <HelpText tone="info">当前后端默认 require_token=false，APP 暂不提供 token 设置；后续启用鉴权时可扩展。</HelpText>
         <View style={styles.actions}>
           <AppButton label="保存设置" onPress={() => robotActions.saveSettings(baseUrl, mockMode, websocketEnabled, Number(refreshInterval) || 1000)} style={styles.action} />
           <AppButton label="测试 HTTP 连接" variant="secondary" loading={snapshot.pending.status} onPress={() => robotActions.testHttpConnection()} style={styles.action} />

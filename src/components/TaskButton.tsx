@@ -15,7 +15,7 @@ type Props = {
 export function TaskButton({
   label,
   commandText,
-  topic = '/retail_ai/text_command',
+  topic = '/inspection_ai/text_command',
   onPress,
   danger = false,
   warning = false,
