@@ -133,7 +133,7 @@ export function buildStatusReport(
   source: StatusSource,
 ) {
   const lines = [
-    '电力巡检机器人真实调试状态报告',
+    '智能机器人调试状态报告',
     `时间：${new Date().toLocaleString()}`,
     `状态来源：${source}`,
     `Bridge：${textOrUnknown(status.connectionState)}`,
@@ -144,12 +144,12 @@ export function buildStatusReport(
     `/scan：${freshnessLabel(status.lastScanAgeSec ?? debugStatus?.lastScanAgeSec)}`,
     `/imu/data：${freshnessLabel(debugStatus?.lastImuAgeSec)}`,
     `TF：${textOrUnknown(debugStatus?.nodes?.tf)}`,
-    `bringup：${textOrUnknown(systemStatus?.bringup?.running)}`,
-    `mapping process：${textOrUnknown(systemStatus?.mapping?.running)}`,
+    `底层进程（bringup）：${textOrUnknown(systemStatus?.bringup?.running)}`,
+    `建图进程（mapping）：${textOrUnknown(systemStatus?.mapping?.running)}`,
     `slam_toolbox：${textOrUnknown(debugStatus?.nodes?.slam_toolbox)}`,
     `/map：${textOrUnknown(debugStatus?.topics?.['/map'])}`,
     `Nav2：${textOrUnknown(status.nav2Status ?? debugStatus?.nav2Status)}`,
-    `mappingStatus：${textOrUnknown(mappingStatus?.mappingStatus ?? status.mappingStatus)}`,
+    `建图状态（mappingStatus）：${textOrUnknown(mappingStatus?.mappingStatus ?? status.mappingStatus)}`,
   ];
   return lines.join('\n');
 }

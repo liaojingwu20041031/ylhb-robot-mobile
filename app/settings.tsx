@@ -46,7 +46,7 @@ export default function SettingsPage() {
             placeholderTextColor={colors.textSubtle}
           />
         </View>
-        <HelpText tone="danger">此 APP 只面向真实机器人。底盘控制会直接发送 /cmd_vel、普通停止和急停请求。</HelpText>
+        <HelpText tone="danger">此 APP 只面向真实机器人。底盘控制会直接发送 /cmd_vel、零速度停止和急停请求。</HelpText>
         <HelpText tone="info">后端默认 require_token=false，本轮不配置 token。</HelpText>
         <View style={styles.actions}>
           <AppButton label="保存并连接" loading={snapshot.pending.connectPending} onPress={() => robotActions.saveSettingsAndConnect(baseUrl, interval)} style={styles.action} />

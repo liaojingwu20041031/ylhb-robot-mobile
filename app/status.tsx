@@ -48,9 +48,9 @@ export default function StatusPage() {
         <Text style={styles.meta}>刷新间隔：{refreshIntervalMs} ms</Text>
       </SectionCard>
 
-      <StatusGroup title="Bridge" description="手机 APP 到 Jetson ylhb_mobile_bridge 的连接。">
-        <StatusCard title="connection" value={status.connectionState} tone={stateTone(status.connectionState)} />
-        <StatusCard title="online" value={status.online} tone={stateTone(status.online)} />
+      <StatusGroup title="桥接状态（Bridge）" description="手机 APP 到 Jetson ylhb_mobile_bridge 的连接。">
+        <StatusCard title="连接状态（connection）" value={status.connectionState} tone={stateTone(status.connectionState)} />
+        <StatusCard title="在线（online）" value={status.online} tone={stateTone(status.online)} />
       </StatusGroup>
       <StatusGroup title="底盘与传感器" description="/cmd_vel 可用于架空测试，地面移动还需要 /odom 新鲜。">
         <StatusCard title="/cmd_vel" value={topic('/cmd_vel')} tone={stateTone(topic('/cmd_vel'))} />
@@ -64,13 +64,13 @@ export default function StatusPage() {
         <StatusCard title="TF" value={node('tf')} tone={stateTone(node('tf'))} />
       </StatusGroup>
       <StatusGroup title="系统进程" description="由 bridge 管理的 bringup 和 mapping 进程。">
-        <StatusCard title="bringup" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
-        <StatusCard title="bringup PID" value={systemStatus?.bringup?.pid ?? '无'} />
-        <StatusCard title="mapping" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
-        <StatusCard title="mapping PID" value={systemStatus?.mapping?.pid ?? '无'} />
+        <StatusCard title="底层进程（bringup）" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
+        <StatusCard title="底层 PID（bringup PID）" value={systemStatus?.bringup?.pid ?? '无'} />
+        <StatusCard title="建图进程（mapping）" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
+        <StatusCard title="建图 PID（mapping PID）" value={systemStatus?.mapping?.pid ?? '无'} />
       </StatusGroup>
       <StatusGroup title="建图与导航" description="Nav2 本轮只展示状态，不提供路线或巡检任务入口。">
-        <StatusCard title="mapping status" value={mappingStatus?.mappingStatus ?? status.mappingStatus ?? debugStatus?.mappingStatus} />
+        <StatusCard title="建图状态（mapping status）" value={mappingStatus?.mappingStatus ?? status.mappingStatus ?? debugStatus?.mappingStatus} />
         <StatusCard title="slam_toolbox" value={node('slam_toolbox')} tone={stateTone(node('slam_toolbox'))} />
         <StatusCard title="/map" value={topic('/map')} tone={stateTone(topic('/map'))} />
         <FreshMetric title="/map 新鲜度" age={mappingStatus?.lastMapAgeSec ?? debugStatus?.lastMapAgeSec} />

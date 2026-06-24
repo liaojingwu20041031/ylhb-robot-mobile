@@ -1,6 +1,6 @@
 # YLHB Robot Mobile
 
-真实电力巡检机器人调试 APP。手机端不直连 ROS2 DDS，只通过 Jetson 上的 `ylhb_mobile_bridge` 使用 HTTP/WebSocket 调试底盘、状态和建图。
+智能机器人调试 APP。手机端不直连 ROS2 DDS，只通过 Jetson 上的 `ylhb_mobile_bridge` 使用 HTTP/WebSocket 调试底盘、状态和建图。
 
 ## 技术栈
 
@@ -18,7 +18,7 @@ npx expo start
 
 手机安装 Expo Go 后扫描二维码查看。
 
-## 真实机器人调试流程
+## 智能机器人调试流程
 
 1. Jetson 启动 `ylhb_mobile_bridge`。
 2. 手机和 Jetson 在同一局域网或同一热点网段。
@@ -31,7 +31,7 @@ npx expo start
 
 - 首页：Jetson Base URL、连接状态、连接按钮和主流程入口。
 - 状态检查：真实 Bridge、ROS2 话题、TF、系统进程、建图和 Nav2 状态。
-- 底盘低速控制：短时 `/cmd_vel`、普通停止 `/api/debug/chassis/stop`、急停 `/api/stop`。
+- 底盘低速控制：短时 `/cmd_vel`、零速度停止 `/api/debug/chassis/stop`、急停 `/api/stop`。
 - 建图调试：bringup、mapping、地图快照、内嵌低速控制、保存地图。
 - 日志：查看 API、错误和现场操作日志。
 - 设置：保存 Jetson URL、测试连接、恢复默认、调整刷新间隔。

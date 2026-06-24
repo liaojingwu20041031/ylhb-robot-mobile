@@ -1,10 +1,12 @@
+import { Link } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from '../src/components/AppButton';
 import { ControlPad } from '../src/components/ControlPad';
 import { FreshnessBadge } from '../src/components/FreshnessBadge';
+import { GlobalSafetyBar } from '../src/components/GlobalSafetyBar';
 import { HelpText } from '../src/components/HelpText';
-import { PageContainer } from '../src/components/PageContainer';
 import { SectionCard } from '../src/components/SectionCard';
 import { StatusCard } from '../src/components/StatusCard';
 import { colors } from '../src/theme/consoleTheme';
@@ -14,6 +16,7 @@ import { robotActions, useRobotStore } from '../src/store/robotStore';
 const MAP_NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 export default function MappingPage() {
+  const insets = useSafeAreaInsets();
   const { debugStatus, systemStatus, mappingStatus, mapSnapshot, savedMap, pending, mapSource, mapStreamConnected, lastMapError } = useRobotStore((snapshot) => ({
     debugStatus: snapshot.debugStatus,
     systemStatus: snapshot.systemStatus,
@@ -59,62 +62,25 @@ export default function MappingPage() {
   };
 
   return (
-    <PageContainer title="建图调试" subtitle="一边低速移动机器人，一边看 /map 快照增长。">
-      <SectionCard
-        title="Step 1 底层状态"
-        description="启动 bringup 后等待 /odom、/scan 和 TF 可用。停止 bringup 前会先停止 mapping。"
-        actions={
-          <View style={styles.actions}>
-            <AppButton label="启动 bringup" loading={pending.systemPending} onPress={() => robotActions.startBringup()} style={styles.action} />
-            <AppButton label="停止 bringup" variant="warning" loading={pending.systemPending} onPress={() => robotActions.stopBringup()} style={styles.action} />
-          </View>
-        }
+    <View style={styles.screen}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
       >
-        <View style={styles.grid}>
-          <StatusCard title="bringup" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
-          <StatusCard title="bringup PID" value={systemStatus?.bringup?.pid ?? '无'} />
-          <StatusCard title="managed" value={systemStatus?.bringup?.managed_by_bridge} tone={stateTone(systemStatus?.bringup?.managed_by_bridge)} />
-          <StatusCard title="returncode" value={systemStatus?.bringup?.returncode ?? '无'} />
-          <StatusCard title="/odom" value={topic('/odom')} tone={stateTone(topic('/odom'))} />
-          <StatusCard title="/scan" value={topic('/scan')} tone={stateTone(topic('/scan'))} />
-          <StatusCard title="TF" value={node('tf')} tone={stateTone(node('tf'))} />
+        <View style={styles.header}>
+          <View style={styles.heading}>
+            <Text style={styles.title}>建图调试</Text>
+            <Text style={styles.subtitle}>一边低速移动机器人，一边看 /map 快照增长。</Text>
+          </View>
+          <Link href="/" style={styles.home}>
+            首页
+          </Link>
         </View>
-        {systemStatus?.bringup && !systemStatus.bringup.managed_by_bridge ? (
-          <HelpText tone="warning">该 bringup 进程不是本 APP/bridge 启动，需要回到原 SSH/终端停止。</HelpText>
-        ) : null}
-        {systemStatus?.bringup?.log_tail ? <Text style={styles.logTail} numberOfLines={5}>{systemStatus.bringup.log_tail}</Text> : null}
-      </SectionCard>
+        <GlobalSafetyBar />
 
       <SectionCard
-        title="Step 2 建图状态"
-        description="启动 mapping 后等待 slam_toolbox 和 /map。"
-        actions={
-          <View style={styles.actions}>
-            <AppButton label="启动 mapping" loading={pending.mappingStatusPending} onPress={() => robotActions.startMapping()} style={styles.action} />
-            <AppButton label="停止 mapping" variant="warning" loading={pending.mappingStatusPending} onPress={() => robotActions.stopMapping()} style={styles.action} />
-          </View>
-        }
-      >
-        <View style={styles.grid}>
-          <StatusCard title="mapping process" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
-          <StatusCard title="recommended" value={nextActionText[nextAction] ?? nextAction} tone={stateTone(nextAction)} />
-          <StatusCard title="mapping status" value={mappingStatus?.mappingStatus} />
-          <StatusCard title="map_available" value={mappingStatus?.mapAvailable} tone={stateTone(mappingStatus?.mapAvailable)} />
-          <StatusCard title="map_server" value={node('map_server')} tone={node('map_server') ? 'danger' : 'success'} />
-          <StatusCard title="slam_toolbox" value={node('slam_toolbox')} tone={stateTone(node('slam_toolbox'))} />
-          <StatusCard title="/map" value={topic('/map')} tone={stateTone(topic('/map'))} />
-        </View>
-        {mapServerConflict ? (
-          <HelpText tone="danger">外部导航/静态地图服务正在运行，bridge 为避免旧地图混淆拒绝返回地图。请先停止原导航或 map_server。</HelpText>
-        ) : null}
-        <View style={styles.freshRow}>
-          <Text style={styles.label}>last_map_age_sec</Text>
-          <FreshnessBadge age={mappingStatus?.lastMapAgeSec ?? debugStatus?.lastMapAgeSec ?? undefined} />
-        </View>
-      </SectionCard>
-
-      <SectionCard
-        title="Step 3 地图预览"
+        title="地图预览"
         description="优先使用 /ws/map?downsample=1；WebSocket 断开后静默回退 HTTP 快照。"
         summary={<Text style={styles.source}>来源：{mapSource.toUpperCase()} {mapStreamConnected ? '已连接' : '未连接'}</Text>}
         actions={<AppButton label="立即刷新地图" variant="secondary" loading={pending.mapSnapshotPending} onPress={() => robotActions.refreshMapSnapshot(1, true)} style={styles.action} />}
@@ -135,12 +101,61 @@ export default function MappingPage() {
         </View>
       </SectionCard>
 
-      <SectionCard title="Step 4 建图辅助底盘控制" description="内嵌更保守的点动控制，用于移动建图。">
-        <ControlPad mode="mapping" />
+      <SectionCard
+        title="底层状态"
+        description="启动底层后等待 /odom、/scan 和 TF 可用。关闭底层前会先停止建图。"
+        actions={
+          <View style={styles.actions}>
+            <AppButton label="启动底层" loading={pending.systemPending} onPress={() => robotActions.startBringup()} style={styles.action} />
+            <AppButton label="关闭底层" variant="warning" loading={pending.systemPending} onPress={() => robotActions.stopBringup()} style={styles.action} />
+          </View>
+        }
+      >
+        <View style={styles.grid}>
+          <StatusCard title="底层进程（bringup）" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
+          <StatusCard title="底层 PID（bringup PID）" value={systemStatus?.bringup?.pid ?? '无'} />
+          <StatusCard title="桥接管理（managed_by_bridge）" value={systemStatus?.bringup?.managed_by_bridge} tone={stateTone(systemStatus?.bringup?.managed_by_bridge)} />
+          <StatusCard title="返回码（returncode）" value={systemStatus?.bringup?.returncode ?? '无'} />
+          <StatusCard title="/odom" value={topic('/odom')} tone={stateTone(topic('/odom'))} />
+          <StatusCard title="/scan" value={topic('/scan')} tone={stateTone(topic('/scan'))} />
+          <StatusCard title="TF" value={node('tf')} tone={stateTone(node('tf'))} />
+        </View>
+        {systemStatus?.bringup && !systemStatus.bringup.managed_by_bridge ? (
+          <HelpText tone="warning">该 bringup 进程不是本 APP/bridge 启动，需要回到原 SSH/终端停止。</HelpText>
+        ) : null}
+        {systemStatus?.bringup?.log_tail ? <Text style={styles.logTail} numberOfLines={5}>{systemStatus.bringup.log_tail}</Text> : null}
       </SectionCard>
 
       <SectionCard
-        title="Step 5 保存地图"
+        title="建图状态"
+        description="启动 mapping 后等待 slam_toolbox 和 /map。"
+        actions={
+          <View style={styles.actions}>
+            <AppButton label="启动建图" loading={pending.mappingStatusPending} onPress={() => robotActions.startMapping()} style={styles.action} />
+            <AppButton label="停止建图" variant="warning" loading={pending.mappingStatusPending} onPress={() => robotActions.stopMapping()} style={styles.action} />
+          </View>
+        }
+      >
+        <View style={styles.grid}>
+          <StatusCard title="建图进程（mapping）" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
+          <StatusCard title="建议动作（recommended）" value={nextActionText[nextAction] ?? nextAction} tone={stateTone(nextAction)} />
+          <StatusCard title="建图状态（mapping status）" value={mappingStatus?.mappingStatus} />
+          <StatusCard title="地图可用（map_available）" value={mappingStatus?.mapAvailable} tone={stateTone(mappingStatus?.mapAvailable)} />
+          <StatusCard title="map_server" value={node('map_server')} tone={node('map_server') ? 'danger' : 'success'} />
+          <StatusCard title="slam_toolbox" value={node('slam_toolbox')} tone={stateTone(node('slam_toolbox'))} />
+          <StatusCard title="/map" value={topic('/map')} tone={stateTone(topic('/map'))} />
+        </View>
+        {mapServerConflict ? (
+          <HelpText tone="danger">外部导航/静态地图服务正在运行，bridge 为避免旧地图混淆拒绝返回地图。请先停止原导航或 map_server。</HelpText>
+        ) : null}
+        <View style={styles.freshRow}>
+          <Text style={styles.label}>地图新鲜度（last_map_age_sec）</Text>
+          <FreshnessBadge age={mappingStatus?.lastMapAgeSec ?? debugStatus?.lastMapAgeSec ?? undefined} />
+        </View>
+      </SectionCard>
+
+      <SectionCard
+        title="保存地图"
         description="地图名只能包含英文字母、数字、下划线和短横线。"
         actions={
           <AppButton
@@ -171,11 +186,61 @@ export default function MappingPage() {
           </View>
         ) : null}
       </SectionCard>
-    </PageContainer>
+      </ScrollView>
+
+      <View style={[styles.fixedControl, { paddingBottom: Math.max(10, insets.bottom) }]}>
+        <Text style={styles.fixedTitle}>建图点动控制</Text>
+        <ControlPad mode="mapping" compact />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    padding: 14,
+    gap: 14,
+    backgroundColor: colors.bg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  heading: {
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  subtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
+  home: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: colors.panelSoft,
+    borderColor: colors.border,
+    borderWidth: 1,
+    color: colors.text,
+    overflow: 'hidden',
+    fontWeight: '800',
+  },
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -200,7 +265,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   mapBox: {
-    height: 320,
+    height: 260,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
@@ -268,5 +333,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     lineHeight: 15,
+  },
+  fixedControl: {
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+    gap: 8,
+  },
+  fixedTitle: {
+    color: colors.text,
+    fontWeight: '900',
   },
 });

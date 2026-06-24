@@ -14,7 +14,7 @@ import { useState } from 'react';
 
 const routes = [
   { href: '/status', title: '状态检查', description: 'Bridge、话题、TF、进程、建图和 Nav2 状态。' },
-  { href: '/control', title: '底盘低速控制', description: '真实 /cmd_vel 点动、普通停止和急停。' },
+  { href: '/control', title: '底盘低速控制', description: '真实 /cmd_vel 点动、零速度停止和急停。' },
   { href: '/mapping', title: '建图调试', description: '启动底层、启动建图、看地图增长并保存。' },
   { href: '/logs', title: '日志', description: '查看请求、错误和现场操作记录。' },
   { href: '/settings', title: '设置', description: '保存 Jetson Base URL 和刷新间隔。' },
@@ -35,7 +35,7 @@ export default function IndexPage() {
   }, [baseUrl]);
 
   return (
-    <PageContainer title="真实电力巡检机器人调试" subtitle="只连接 ylhb_mobile_bridge，不使用演示数据。">
+    <PageContainer title="智能机器人调试" subtitle="只连接 ylhb_mobile_bridge，不使用演示数据。">
       <SectionCard
         title="连接机器人"
         description="输入 Jetson bridge 地址后连接真实机器人。连接会依次检查 /api/status、/api/debug/status、/api/debug/system/status、/api/debug/mapping/status。"

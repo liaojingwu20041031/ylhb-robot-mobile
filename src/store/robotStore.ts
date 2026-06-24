@@ -14,7 +14,6 @@ import {
   PendingState,
   RobotStatus,
   SavedMap,
-  SpeedProfile,
   StatusSource,
   SystemStatus,
   VelocityCommand,
@@ -36,7 +35,6 @@ type StoreState = {
   mapStreamConnected: boolean;
   lastMapFrameAt?: number;
   lastMapError?: string;
-  speedProfile: SpeedProfile;
   linearSpeed: number;
   angularSpeed: number;
   commandDurationMs: number;
@@ -73,9 +71,8 @@ let state: StoreState = {
   status: initialStatus,
   mapSource: 'none',
   mapStreamConnected: false,
-  speedProfile: '低速',
-  linearSpeed: 0.05,
-  angularSpeed: 0.18,
+  linearSpeed: 0.3,
+  angularSpeed: 0.55,
   commandDurationMs: 500,
   logs: [],
   pending: initialPending,
@@ -364,25 +361,11 @@ export const robotActions = {
       return result;
     }
   },
-  setSpeedProfile(profile: SpeedProfile) {
-    const presets: Record<SpeedProfile, { linear: number; angular: number }> = {
-      超低速: { linear: 0.03, angular: 0.12 },
-      低速: { linear: 0.05, angular: 0.18 },
-      调试较快: { linear: 0.1, angular: 0.32 },
-    };
-    const preset = presets[profile];
-    setState({
-      speedProfile: profile,
-      linearSpeed: clamp(preset.linear, 0.01, 0.15),
-      angularSpeed: clamp(preset.angular, 0.05, 0.5),
-    });
-    addLog('user', `速度档位已切换：${profile}`, undefined, '底盘控制');
-  },
   setLinearSpeed(value: number) {
-    setState({ linearSpeed: clamp(value, 0.01, 0.15) });
+    setState({ linearSpeed: clamp(value, 0.01, 0.35) });
   },
   setAngularSpeed(value: number) {
-    setState({ angularSpeed: clamp(value, 0.05, 0.5) });
+    setState({ angularSpeed: clamp(value, 0.05, 0.55) });
   },
   setCommandDurationMs(value: number) {
     setState({ commandDurationMs: clamp(Math.round(value), 50, 3000) });

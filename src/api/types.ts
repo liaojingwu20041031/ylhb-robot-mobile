@@ -133,8 +133,6 @@ export type StatusSource = 'WebSocket' | 'HTTP fallback' | '未知';
 
 export type MapSource = 'ws' | 'http' | 'none';
 
-export type SpeedProfile = '超低速' | '低速' | '调试较快';
-
 export type PendingState = {
   connectPending: boolean;
   statusPending: boolean;
