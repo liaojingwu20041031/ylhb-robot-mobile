@@ -13,7 +13,7 @@ export default function Layout() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: '智能机器人调试' }} />
+        <Stack.Screen name="index" options={{ title: '智能机器人调试台' }} />
         <Stack.Screen name="status" options={{ title: '状态检查' }} />
         <Stack.Screen name="control" options={{ title: '底盘调试' }} />
         <Stack.Screen name="mapping" options={{ title: '建图调试' }} />

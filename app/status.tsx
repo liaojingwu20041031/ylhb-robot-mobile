@@ -65,9 +65,7 @@ export default function StatusPage() {
       </StatusGroup>
       <StatusGroup title="系统进程" description="由 bridge 管理的 bringup 和 mapping 进程。">
         <StatusCard title="底层进程（bringup）" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
-        <StatusCard title="底层 PID（bringup PID）" value={systemStatus?.bringup?.pid ?? '无'} />
         <StatusCard title="建图进程（mapping）" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
-        <StatusCard title="建图 PID（mapping PID）" value={systemStatus?.mapping?.pid ?? '无'} />
       </StatusGroup>
       <StatusGroup title="建图与导航" description="Nav2 本轮只展示状态，不提供路线或巡检任务入口。">
         <StatusCard title="建图状态（mapping status）" value={mappingStatus?.mappingStatus ?? status.mappingStatus ?? debugStatus?.mappingStatus} />

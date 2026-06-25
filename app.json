@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "智能机器人调试",
+    "name": "智能机器人调试台",
     "slug": "ylhb-robot-mobile",
     "scheme": "ylhbrobot",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
@@ -15,6 +15,8 @@
     ],
     "android": {
       "package": "com.ylhb.robotmobile",
+      "usesCleartextTraffic": true,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon.png",
         "backgroundColor": "#ffffff"

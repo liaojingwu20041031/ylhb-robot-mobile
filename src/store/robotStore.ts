@@ -1,6 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { useSyncExternalStore } from 'react';
 import { createRobotApi, MapSocket, StatusSocket } from '../api/robotApi';
+import { trimBaseUrl } from '../api/http';
 import {
   ApiResponse,
   AppLog,
@@ -15,6 +16,7 @@ import {
   MappingStatus,
   MapSource,
   PendingState,
+  RequestDiagnostics,
   RobotStatus,
   SavedMap,
   StatusSource,
@@ -54,6 +56,13 @@ type StoreState = {
 };
 
 const DEFAULT_BASE_URL = 'http://192.168.137.100:8000';
+const startupLog: AppLog = {
+  id: 'startup',
+  type: 'info',
+  message: 'App 已启动',
+  source: 'APP',
+  timestamp: Date.now(),
+};
 
 const initialStatus: RobotStatus = {
   online: false,
@@ -89,7 +98,7 @@ let state: StoreState = {
   linearSpeed: 0.3,
   angularSpeed: 0.55,
   commandDurationMs: 500,
-  logs: [],
+  logs: [startupLog],
   pending: initialPending,
 };
 
@@ -132,8 +141,39 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function responseDetail(value: string | null | undefined) {
-  return value ?? undefined;
+function formatDiagnostics(diagnostics?: RequestDiagnostics) {
+  if (!diagnostics) {
+    return ['请求诊断:', '诊断对象缺失'].join('\n');
+  }
+  const lines = [
+    '请求诊断:',
+    `method: ${diagnostics.method}`,
+    `url: ${diagnostics.url}`,
+    `baseUrl: ${diagnostics.baseUrl}`,
+    `path: ${diagnostics.path}`,
+    `scheme: ${diagnostics.scheme ?? '未知'}`,
+    `host: ${diagnostics.host ?? '未知'}`,
+    `port: ${diagnostics.port || '默认'}`,
+    `durationMs: ${diagnostics.durationMs}`,
+    `platform: ${diagnostics.platform}`,
+    `status: ${diagnostics.status ?? '无 HTTP 响应'}`,
+  ];
+  if (diagnostics.errorName) {
+    lines.push(`errorName: ${diagnostics.errorName}`);
+  }
+  if (diagnostics.errorMessage) {
+    lines.push(`errorMessage: ${diagnostics.errorMessage}`);
+  }
+  if (diagnostics.suggestions?.length) {
+    lines.push('排查建议:');
+    diagnostics.suggestions.forEach((item) => lines.push(`- ${item}`));
+  }
+  return lines.join('\n');
+}
+
+function responseDetail(response: ApiResponse<unknown>) {
+  const diagnostics = formatDiagnostics(response.diagnostics);
+  return [response.error, diagnostics].filter(Boolean).join('\n\n') || undefined;
 }
 
 function mapManageError(response: ApiResponse<unknown>) {
@@ -160,16 +200,16 @@ function mapManageError(response: ApiResponse<unknown>) {
 function reportMapManageError(label: string, response: ApiResponse<unknown>) {
   const message = mapManageError(response);
   setState({ lastMapManageError: message });
-  addLog('error', `${label}: ${message}`, responseDetail(response.error), '地图管理');
+  addLog('error', `${label}: ${message}`, responseDetail(response), '地图管理');
 }
 
 function applyResponse<T>(label: string, response: ApiResponse<T>, logSuccess = true) {
   if (response.ok) {
     if (logSuccess) {
-      addLog('api', `${label}: ${response.message ?? 'ok'}`, undefined, 'Bridge');
+      addLog('api', `${label}: ${response.message ?? 'ok'}`, responseDetail(response), 'Bridge');
     }
   } else {
-    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, responseDetail(response.error), 'Bridge');
+    addLog('error', `${label}: ${response.message ?? response.error ?? 'failed'}`, responseDetail(response), 'Bridge');
   }
 }
 
@@ -269,20 +309,26 @@ export const robotActions = {
   addLog,
   clearLogs() {
     setState({ logs: [] });
-    addLog('user', '日志已清空', undefined, '用户操作');
+    addLog('info', '日志已清空', undefined, '日志');
   },
   saveSettings(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
     robotActions.stopStatusSocket(false);
     closeMapSocket();
+    const normalizedBaseUrl = trimBaseUrl(baseUrl);
     setState({
-      baseUrl: baseUrl.replace(/\/+$/, ''),
+      baseUrl: normalizedBaseUrl,
       refreshIntervalMs,
       statusSource: '未知',
       mapSource: 'none',
       httpTest: undefined,
       websocketTest: undefined,
     });
-    addLog('info', `Jetson Base URL 已保存：${baseUrl}`, undefined, '设置');
+    addLog(
+      'info',
+      `Jetson Base URL 已保存：${normalizedBaseUrl}`,
+      undefined,
+      '设置',
+    );
   },
   async saveSettingsAndConnect(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
     robotActions.saveSettings(baseUrl, refreshIntervalMs);
@@ -304,6 +350,12 @@ export const robotActions = {
   async connectRobot() {
     setPending('connectPending', true);
     updateConnection('connecting', false);
+    addLog(
+      'debug',
+      `准备连接 Bridge：${trimBaseUrl(state.baseUrl)}`,
+      undefined,
+      '诊断',
+    );
     try {
       const ok = await refreshAllForConnection();
       if (ok) {
@@ -379,6 +431,7 @@ export const robotActions = {
   },
   async testHttpConnection() {
     const started = Date.now();
+    addLog('debug', `测试 HTTP 连接：${trimBaseUrl(state.baseUrl)}/api/status`, undefined, '诊断');
     const response = await robotActions.refreshStatus(true);
     const result: ConnectionTestResult = {
       ok: response.ok,
@@ -387,6 +440,14 @@ export const robotActions = {
       timestamp: Date.now(),
     };
     setState({ httpTest: result });
+    if (response.ok) {
+      addLog(
+        'api',
+        `测试 HTTP 连接成功：${response.diagnostics?.url ?? `${trimBaseUrl(state.baseUrl)}/api/status`}`,
+        formatDiagnostics(response.diagnostics),
+        'Bridge',
+      );
+    }
     return result;
   },
   async testWebSocket() {
@@ -541,7 +602,7 @@ export const robotActions = {
         debugMapPreviewName: mapName,
         lastMapPreviewError: message,
       });
-      addLog('error', `加载地图预览失败: ${message}`, responseDetail(response.error), '地图管理');
+      addLog('error', `加载地图预览失败: ${message}`, responseDetail(response), '地图管理');
     }
     return response;
   },

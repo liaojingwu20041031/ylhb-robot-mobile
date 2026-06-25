@@ -36,6 +36,23 @@ export type ApiResponse<T> = {
   data?: T | null;
   error?: string | null;
   timestamp?: number;
+  diagnostics?: RequestDiagnostics;
+};
+
+export type RequestDiagnostics = {
+  method: string;
+  url: string;
+  baseUrl: string;
+  path: string;
+  host?: string;
+  port?: string;
+  scheme?: string;
+  durationMs: number;
+  platform: string;
+  status?: number;
+  errorName?: string;
+  errorMessage?: string;
+  suggestions?: string[];
 };
 
 export type DebugStatus = {

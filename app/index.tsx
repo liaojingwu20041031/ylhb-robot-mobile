@@ -36,10 +36,10 @@ export default function IndexPage() {
   }, [baseUrl]);
 
   return (
-    <PageContainer title="智能机器人调试" subtitle="只连接 ylhb_mobile_bridge，不使用演示数据。">
+    <PageContainer title="智能机器人调试台" subtitle="连接 Jetson Bridge，执行现场状态检查、底盘控制和建图调试。">
       <SectionCard
         title="连接机器人"
-        description="输入 Jetson bridge 地址后连接真实机器人。连接会依次检查 /api/status、/api/debug/status、/api/debug/system/status、/api/debug/mapping/status。"
+        description="输入 Jetson Bridge 地址后连接机器人，并同步关键状态。"
         summary={<StatusBadge label={statusSource} tone={statusSource === '未知' ? 'neutral' : 'info'} />}
       >
         <View style={styles.inputBox}>
@@ -77,7 +77,7 @@ export default function IndexPage() {
         </View>
       </SectionCard>
 
-      <SectionCard title="主流程入口" description="现场调试只保留连接、状态检查、底盘低速控制、建图和日志。">
+      <SectionCard title="主流程入口" description="按现场调试流程进入对应工具。">
         <View style={styles.menu}>
           {routes.map((route) => (
             <Link key={route.href} href={route.href} asChild>

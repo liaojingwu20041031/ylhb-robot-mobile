@@ -27,7 +27,7 @@ export default function LogsPage() {
 
   return (
     <PageContainer title="系统日志" subtitle="APP 操作、请求结果、错误信息和调试记录。">
-      <SectionCard title="日志筛选" description="复制内容为纯文本，方便发给 Codex 或 ChatGPT 分析。">
+      <SectionCard title="日志筛选" description="复制内容为纯文本，便于现场排查和归档。">
         <View style={styles.filters}>
           {filters.map((item) => (
             <AppButton

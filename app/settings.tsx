@@ -47,7 +47,6 @@ export default function SettingsPage() {
           />
         </View>
         <HelpText tone="danger">此 APP 只面向真实机器人。底盘控制会直接发送 /cmd_vel、零速度停止和急停请求。</HelpText>
-        <HelpText tone="info">后端默认 require_token=false，本轮不配置 token。</HelpText>
         <View style={styles.actions}>
           <AppButton label="保存并连接" loading={snapshot.pending.connectPending} onPress={() => robotActions.saveSettingsAndConnect(baseUrl, interval)} style={styles.action} />
           <AppButton label="测试 HTTP 连接" variant="secondary" loading={snapshot.pending.statusPending} onPress={() => robotActions.testHttpConnection()} style={styles.action} />
@@ -60,14 +59,11 @@ export default function SettingsPage() {
           />
         </View>
       </SectionCard>
-      <SectionCard title="当前配置" description="连接结果和状态来源。">
+      <SectionCard title="当前配置" description="当前保存的连接参数。">
         <View style={styles.grid}>
           <StatusCard title="当前 URL" value={snapshot.baseUrl} />
           <StatusCard title="状态来源" value={snapshot.statusSource} />
           <StatusCard title="刷新间隔" value={`${snapshot.refreshIntervalMs} ms`} />
-          <StatusCard title="HTTP 延迟" value={snapshot.httpTest?.latencyMs !== undefined ? `${snapshot.httpTest.latencyMs} ms` : undefined} />
-          <StatusCard title="/api/status" value={snapshot.httpTest?.message} />
-          <StatusCard title="/ws/status" value={snapshot.websocketTest?.message} />
         </View>
       </SectionCard>
     </PageContainer>

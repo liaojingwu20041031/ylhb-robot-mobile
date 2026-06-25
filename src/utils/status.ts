@@ -133,7 +133,7 @@ export function buildStatusReport(
   source: StatusSource,
 ) {
   const lines = [
-    '智能机器人调试状态报告',
+    '智能机器人调试台状态报告',
     `时间：${new Date().toLocaleString()}`,
     `状态来源：${source}`,
     `Bridge：${textOrUnknown(status.connectionState)}`,

@@ -113,9 +113,6 @@ export default function MappingPage() {
       >
         <View style={styles.grid}>
           <StatusCard title="底层进程（bringup）" value={systemStatus?.bringup?.running} tone={stateTone(systemStatus?.bringup?.running)} />
-          <StatusCard title="底层 PID（bringup PID）" value={systemStatus?.bringup?.pid ?? '无'} />
-          <StatusCard title="桥接管理（managed_by_bridge）" value={systemStatus?.bringup?.managed_by_bridge} tone={stateTone(systemStatus?.bringup?.managed_by_bridge)} />
-          <StatusCard title="返回码（returncode）" value={systemStatus?.bringup?.returncode ?? '无'} />
           <StatusCard title="/odom" value={topic('/odom')} tone={stateTone(topic('/odom'))} />
           <StatusCard title="/scan" value={topic('/scan')} tone={stateTone(topic('/scan'))} />
           <StatusCard title="TF" value={node('tf')} tone={stateTone(node('tf'))} />
@@ -123,7 +120,6 @@ export default function MappingPage() {
         {systemStatus?.bringup && !systemStatus.bringup.managed_by_bridge ? (
           <HelpText tone="warning">该 bringup 进程不是本 APP/bridge 启动，需要回到原 SSH/终端停止。</HelpText>
         ) : null}
-        {systemStatus?.bringup?.log_tail ? <Text style={styles.logTail} numberOfLines={5}>{systemStatus.bringup.log_tail}</Text> : null}
       </SectionCard>
 
       <SectionCard
@@ -138,7 +134,6 @@ export default function MappingPage() {
       >
         <View style={styles.grid}>
           <StatusCard title="建图进程（mapping）" value={systemStatus?.mapping?.running} tone={stateTone(systemStatus?.mapping?.running)} />
-          <StatusCard title="建议动作（recommended）" value={nextActionText[nextAction] ?? nextAction} tone={stateTone(nextAction)} />
           <StatusCard title="建图状态（mapping status）" value={mappingStatus?.mappingStatus} />
           <StatusCard title="地图可用（map_available）" value={mappingStatus?.mapAvailable} tone={stateTone(mappingStatus?.mapAvailable)} />
           <StatusCard title="map_server" value={node('map_server')} tone={node('map_server') ? 'danger' : 'success'} />
@@ -323,16 +318,6 @@ const styles = StyleSheet.create({
   source: {
     color: colors.textMuted,
     fontWeight: '800',
-  },
-  logTail: {
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: colors.bgElevated,
-    borderColor: colors.border,
-    borderWidth: 1,
-    color: colors.textMuted,
-    fontSize: 11,
-    lineHeight: 15,
   },
   fixedControl: {
     paddingTop: 10,
