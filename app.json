@@ -5,6 +5,7 @@
     "scheme": "ylhbrobot",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
@@ -13,7 +14,11 @@
       "expo-router"
     ],
     "android": {
-      "package": "com.ylhb.robotmobile"
+      "package": "com.ylhb.robotmobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#ffffff"
+      }
     },
     "extra": {
       "router": {

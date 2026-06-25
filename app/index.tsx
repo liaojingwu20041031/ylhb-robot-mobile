@@ -16,6 +16,7 @@ const routes = [
   { href: '/status', title: '状态检查', description: 'Bridge、话题、TF、进程、建图和 Nav2 状态。' },
   { href: '/control', title: '底盘低速控制', description: '真实 /cmd_vel 点动、零速度停止和急停。' },
   { href: '/mapping', title: '建图调试', description: '启动底层、启动建图、看地图增长并保存。' },
+  { href: '/maps', title: '地图管理', description: '查看、重命名和删除 Jetson 上的地图文件。' },
   { href: '/logs', title: '日志', description: '查看请求、错误和现场操作记录。' },
   { href: '/settings', title: '设置', description: '保存 Jetson Base URL 和刷新间隔。' },
 ] as const;

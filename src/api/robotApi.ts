@@ -1,11 +1,17 @@
 import { request, trimBaseUrl } from './http';
 import {
   ApiResponse,
+  ConfirmDefaultMapResult,
+  DebugMapPreview,
   DebugStatus,
+  DebugMapsList,
+  DeleteMapResult,
   MapSnapshot,
   MappingSaveRequest,
   MappingStatus,
   ProcessMode,
+  RenameMapRequest,
+  RenameMapResult,
   RobotStatus,
   SavedMap,
   SystemStatus,
@@ -122,6 +128,25 @@ export function createRobotApi(baseUrl: string) {
       request<SavedMap>(baseUrl, '/api/debug/mapping/save', {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+    getDebugMaps: () => request<DebugMapsList>(baseUrl, '/api/debug/maps'),
+    getDebugMapPreview: (name: string, maxSizePx = 1024) =>
+      request<DebugMapPreview>(
+        baseUrl,
+        `/api/debug/maps/${encodeURIComponent(name)}/preview?max_size_px=${encodeURIComponent(String(maxSizePx))}`,
+      ),
+    confirmDefaultDebugMap: (name: string) =>
+      request<ConfirmDefaultMapResult>(baseUrl, `/api/debug/maps/${encodeURIComponent(name)}/confirm_default`, {
+        method: 'POST',
+      }),
+    renameDebugMap: (name: string, body: RenameMapRequest) =>
+      request<RenameMapResult>(baseUrl, `/api/debug/maps/${encodeURIComponent(name)}/rename`, {
+        method: 'POST',
+        body: JSON.stringify({ new_name: body.new_name }),
+      }),
+    deleteDebugMap: (name: string) =>
+      request<DeleteMapResult>(baseUrl, `/api/debug/maps/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
       }),
     connectStatusWebSocket: (
       onStatus: (status: RobotStatus) => void,

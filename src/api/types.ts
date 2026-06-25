@@ -108,6 +108,11 @@ export type MapSnapshot = {
   png_base64: string;
 };
 
+export type DebugMapPreview = {
+  map_meta: MapMeta;
+  png_base64: string;
+};
+
 export type MappingSaveRequest = {
   map_name?: string;
 };
@@ -116,6 +121,48 @@ export type SavedMap = {
   yaml_path: string;
   pgm_path: string;
   output?: string;
+};
+
+export type DebugMapFile = {
+  name: string;
+  yaml_file?: string | null;
+  pgm_file?: string | null;
+  yaml_path?: string | null;
+  pgm_path?: string | null;
+  size_bytes?: number | null;
+  modified_at?: number | null;
+  resolution?: number | null;
+  origin?: number[] | null;
+  is_default?: boolean;
+  valid?: boolean;
+  issues?: string[];
+};
+
+export type DebugMapsList = {
+  maps: DebugMapFile[];
+};
+
+export type RenameMapRequest = {
+  new_name: string;
+};
+
+export type RenameMapResult = {
+  old_name?: string;
+  new_name?: string;
+  yaml_path?: string;
+  pgm_path?: string;
+};
+
+export type DeleteMapResult = {
+  name?: string;
+  deleted?: boolean;
+};
+
+export type ConfirmDefaultMapResult = {
+  changed: boolean;
+  default: string;
+  archived_previous_map?: string | null;
+  archived_routes: string[];
 };
 
 export type AppLogType = 'info' | 'warn' | 'error' | 'api' | 'debug' | 'user';
@@ -141,6 +188,11 @@ export type PendingState = {
   mappingStatusPending: boolean;
   mapSnapshotPending: boolean;
   mapSavePending: boolean;
+  mapsPending: boolean;
+  mapPreviewPending: boolean;
+  mapConfirmDefaultPending: boolean;
+  mapRenamePending: boolean;
+  mapDeletePending: boolean;
   copyPending: boolean;
 };
 
