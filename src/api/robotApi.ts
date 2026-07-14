@@ -9,9 +9,13 @@ import {
   MapSnapshot,
   MappingSaveRequest,
   MappingStatus,
+  NetworkInterfaceInfo,
+  NetworkWarning,
   ProcessMode,
   RenameMapRequest,
   RenameMapResult,
+  RobotEndpointInfo,
+  RobotNetworkStatus,
   RobotStatus,
   SavedMap,
   SystemStatus,
@@ -26,20 +30,84 @@ function normalizeTimestamp(value: unknown) {
   return numberValue < 10000000000 ? numberValue * 1000 : numberValue;
 }
 
-function normalizeStatus(raw: any): RobotStatus {
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+}
+
+function normalizeEndpointInfo(value: unknown): RobotEndpointInfo | null {
+  const raw = asRecord(value);
+  const url = typeof raw.url === 'string' ? raw.url : '';
+  if (!url) return null;
+  return {
+    interface: typeof raw.interface === 'string' ? raw.interface : undefined,
+    type: typeof raw.type === 'string' ? raw.type : undefined,
+    label: typeof raw.label === 'string' ? raw.label : undefined,
+    address: typeof raw.address === 'string' ? raw.address : undefined,
+    port: Number.isFinite(Number(raw.port)) ? Number(raw.port) : undefined,
+    url,
+    available: raw.available === undefined ? undefined : Boolean(raw.available),
+  };
+}
+
+function normalizeNetwork(value: unknown): RobotNetworkStatus | undefined {
+  const raw = asRecord(value);
+  if (Object.keys(raw).length === 0) return undefined;
+  const endpointRows = raw.appEndpoints ?? raw.app_endpoints;
+  const interfaceRows = raw.interfaces ?? raw.networkInterfaces ?? raw.network_interfaces;
+  const warningRows = raw.warnings ?? raw.networkWarnings ?? raw.network_warnings;
+  const preferredRaw = raw.preferredAppEndpoint ?? raw.preferred_app_endpoint;
+  const appEndpoints = Array.isArray(endpointRows)
+    ? endpointRows.map(normalizeEndpointInfo).filter((item): item is RobotEndpointInfo => item !== null)
+    : [];
+  const interfaces: NetworkInterfaceInfo[] = Array.isArray(interfaceRows)
+    ? interfaceRows.map((item) => {
+        const entry = asRecord(item);
+        return {
+          name: String(entry.name ?? ''),
+          type: String(entry.type ?? 'other'),
+          label: String(entry.label ?? entry.name ?? '其他网络'),
+          address: String(entry.address ?? ''),
+          prefixLength: Number.isFinite(Number(entry.prefixLength ?? entry.prefix_length)) ? Number(entry.prefixLength ?? entry.prefix_length) : undefined,
+          gateway: typeof entry.gateway === 'string' ? entry.gateway : undefined,
+          defaultRoute: entry.defaultRoute === undefined && entry.default_route === undefined ? undefined : Boolean(entry.defaultRoute ?? entry.default_route),
+          metric: Number.isFinite(Number(entry.metric)) ? Number(entry.metric) : undefined,
+          up: entry.up === undefined ? undefined : Boolean(entry.up),
+        };
+      }).filter((item) => item.name && item.address)
+    : [];
+  const warnings: NetworkWarning[] = Array.isArray(warningRows)
+    ? warningRows.map((item) => {
+        const entry = asRecord(item);
+        return { code: String(entry.code ?? ''), message: String(entry.message ?? '') };
+      }).filter((item) => item.code && item.message)
+    : [];
+  return {
+    appEndpoints,
+    interfaces,
+    preferredAppEndpoint: normalizeEndpointInfo(preferredRaw) ?? undefined,
+    warnings,
+  };
+}
+
+function normalizeStatus(input: unknown): RobotStatus {
+  const raw = asRecord(input);
+  const connectionState = raw.connectionState ?? raw.connection_state;
   return {
     online: Boolean(raw.online),
-    connectionState: raw.connectionState ?? raw.connection_state ?? 'connected',
-    canStatus: raw.canStatus ?? raw.can_status,
-    zlacStatus: raw.zlacStatus ?? raw.zlac_status,
-    systemMode: raw.systemMode ?? raw.system_mode,
-    mappingStatus: raw.mappingStatus ?? raw.mapping_status,
-    nav2Status: raw.nav2Status ?? raw.nav2_status,
-    lastOdomAgeSec: raw.lastOdomAgeSec ?? raw.last_odom_age_sec,
-    lastScanAgeSec: raw.lastScanAgeSec ?? raw.last_scan_age_sec,
-    pose: raw.pose ?? null,
-    velocity: raw.velocity ?? null,
-    batteryPercent: raw.batteryPercent ?? raw.battery_percent,
+    connectionState: ['disconnected', 'connecting', 'connected', 'error'].includes(String(connectionState))
+      ? String(connectionState) as RobotStatus['connectionState']
+      : 'connected',
+    canStatus: String(raw.canStatus ?? raw.can_status ?? '') || undefined,
+    zlacStatus: String(raw.zlacStatus ?? raw.zlac_status ?? '') || undefined,
+    systemMode: String(raw.systemMode ?? raw.system_mode ?? '') || undefined,
+    mappingStatus: String(raw.mappingStatus ?? raw.mapping_status ?? '') || undefined,
+    nav2Status: String(raw.nav2Status ?? raw.nav2_status ?? '') || undefined,
+    lastOdomAgeSec: Number.isFinite(Number(raw.lastOdomAgeSec ?? raw.last_odom_age_sec)) ? Number(raw.lastOdomAgeSec ?? raw.last_odom_age_sec) : undefined,
+    lastScanAgeSec: Number.isFinite(Number(raw.lastScanAgeSec ?? raw.last_scan_age_sec)) ? Number(raw.lastScanAgeSec ?? raw.last_scan_age_sec) : undefined,
+    pose: (raw.pose as RobotStatus['pose']) ?? null,
+    velocity: (raw.velocity as RobotStatus['velocity']) ?? null,
+    batteryPercent: Number.isFinite(Number(raw.batteryPercent ?? raw.battery_percent)) ? Number(raw.batteryPercent ?? raw.battery_percent) : undefined,
+    network: normalizeNetwork(raw.network),
     timestamp: normalizeTimestamp(raw.timestamp),
   };
 }
@@ -100,7 +168,7 @@ export function createRobotApi(baseUrl: string) {
     request<null>(baseUrl, `/api/debug/system/${action}/${mode}`, { method: 'POST' });
 
   return {
-    getStatus: () => normalized<any, RobotStatus>(() => request<any>(baseUrl, '/api/status'), normalizeStatus),
+    getStatus: () => normalized<unknown, RobotStatus>(() => request<unknown>(baseUrl, '/api/status'), normalizeStatus),
     getDebugStatus: () => normalized<any, DebugStatus>(() => request<any>(baseUrl, '/api/debug/status'), normalizeDebugStatus),
     getSystemStatus: () => request<SystemStatus>(baseUrl, '/api/debug/system/status'),
     startBringup: () => systemProcess('start', 'bringup'),
@@ -157,7 +225,7 @@ export function createRobotApi(baseUrl: string) {
       let closedByClient = false;
       socket.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data) as ApiResponse<any>;
+          const payload = JSON.parse(event.data) as ApiResponse<unknown>;
           if (payload && typeof payload === 'object' && 'ok' in payload && !payload.ok) {
             onError(payload.message ?? payload.error ?? 'WebSocket status frame failed');
             return;

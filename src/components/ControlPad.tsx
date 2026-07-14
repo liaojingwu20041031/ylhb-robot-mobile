@@ -18,10 +18,11 @@ type Props = {
 };
 
 export function ControlPad({ mode = 'standalone', compact = false }: Props) {
-  const { status, debugStatus, pending } = useRobotStore((snapshot) => ({
+  const { status, debugStatus, pending, endpointSwitching } = useRobotStore((snapshot) => ({
     status: snapshot.status,
     debugStatus: snapshot.debugStatus,
     pending: snapshot.pending,
+    endpointSwitching: snapshot.endpointSwitching,
   }));
   const { linearSpeed, angularSpeed, commandDurationMs } = useRobotStore((snapshot) => ({
     linearSpeed: snapshot.linearSpeed,
@@ -42,34 +43,43 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
   const imuMissing = !topicOk(debugStatus, '/imu/data') || freshnessTone(imuAge) === 'stale' || freshnessTone(imuAge) === 'danger';
   const mappingReady = odomFresh && scanFresh && tfFresh;
   const movementReady = bridgeReady && cmdVelReady && (mode === 'mapping' ? mappingReady : true);
-  const movementDisabled = !movementReady;
+  const movementDisabled = !movementReady || endpointSwitching;
   const speed = Math.min(linearSpeed, LINEAR_MAX);
   const turn = Math.min(angularSpeed, ANGULAR_MAX);
+
+  const clearHold = () => {
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    activeDirectionRef.current = null;
+  };
 
   useEffect(() => () => stopHold(true), []);
 
   useEffect(() => {
     if (movementDisabled) {
-      stopHold();
+      if (endpointSwitching) {
+        clearHold();
+      } else {
+        stopHold();
+      }
     }
-  }, [movementDisabled]);
+  }, [endpointSwitching, movementDisabled]);
 
   const guidance = useMemo(() => {
+    if (endpointSwitching) return '连接正在切换，运动控制暂不可用。';
     if (!bridgeReady) return '机器人未连接，方向按钮已禁用。';
     if (!cmdVelReady) return '运动通道不可用，方向按钮已禁用。';
     if (mode === 'mapping' && !mappingReady) return '里程计、激光雷达或坐标变换未就绪，建图点动已禁用。';
     if (!odomFresh) return '里程计数据过期，地面移动前请先检查。';
     if (!scanFresh || !tfFresh) return '可进行低速控制；开始建图前请检查传感器状态。';
     return '按住方向键持续移动，松手立即停止。';
-  }, [bridgeReady, cmdVelReady, commandDurationMs, mappingReady, mode, odomFresh, scanFresh, tfFresh]);
+  }, [bridgeReady, cmdVelReady, commandDurationMs, endpointSwitching, mappingReady, mode, odomFresh, scanFresh, tfFresh]);
 
   const stopHold = (quiet = false) => {
-    if (holdTimerRef.current) {
-      clearInterval(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
     const hadDirection = Boolean(activeDirectionRef.current);
-    activeDirectionRef.current = null;
+    clearHold();
     if (hadDirection || quiet) {
       robotActions.emergencyStop(true);
       if (!quiet) {
@@ -109,10 +119,10 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
       <View style={styles.grid}>
         <HoldButton label="前进" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('前进', speed, 0)} onPressOut={() => stopHold()} style={[styles.full, compact && styles.compactHold]} />
         <HoldButton label="左转" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('左转', 0, turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
-        <AppButton label="停止" variant="secondary" loading={pending.controlPending} onPress={() => robotActions.chassisStop()} style={styles.third} accessibilityHint="发送零速度停止命令" />
+        <AppButton label="停止" variant="secondary" disabled={endpointSwitching} loading={pending.controlPending} onPress={() => robotActions.chassisStop()} style={styles.third} accessibilityHint="发送零速度停止命令" />
         <HoldButton label="右转" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('右转', 0, -turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
         <HoldButton label="后退" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('后退', -speed, 0)} onPressOut={() => stopHold()} style={[styles.full, compact && styles.compactHold]} />
-        <AppButton label="紧急停止" variant="danger" loading={pending.controlPending} onPress={() => robotActions.emergencyStop()} style={styles.full} accessibilityLabel="紧急停止机器人" accessibilityHint="立即停止机器人运动" />
+        <AppButton label="紧急停止" variant="danger" loading={pending.controlPending} onPress={() => robotActions.emergencyStopAllEndpoints()} style={styles.full} accessibilityLabel="紧急停止机器人" accessibilityHint="向所有已知机器人地址发送停止请求" />
       </View>
     </View>
   );

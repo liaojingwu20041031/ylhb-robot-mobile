@@ -20,14 +20,23 @@ const shortcuts = [
 ] as const;
 
 export default function HomePage() {
-  const { baseUrl, status, debugStatus, systemStatus, mappingStatus, statusSource, pending } = useRobotStore((snapshot) => ({
+  const { baseUrl, status, debugStatus, systemStatus, mappingStatus, statusSource, pending, robotEndpoints, activeEndpointId, endpointSwitching } = useRobotStore((snapshot) => ({
     baseUrl: snapshot.baseUrl, status: snapshot.status, debugStatus: snapshot.debugStatus, systemStatus: snapshot.systemStatus,
-    mappingStatus: snapshot.mappingStatus, statusSource: snapshot.statusSource, pending: snapshot.pending,
+    mappingStatus: snapshot.mappingStatus, statusSource: snapshot.statusSource, pending: snapshot.pending, robotEndpoints: snapshot.robotEndpoints,
+    activeEndpointId: snapshot.activeEndpointId, endpointSwitching: snapshot.endpointSwitching,
   }));
-  useEffect(() => { robotActions.startStatusSocket(); robotActions.refreshStatusBundle(); }, []);
+  const activeEndpoint = robotEndpoints.find((endpoint) => endpoint.id === activeEndpointId);
+  const alternateEndpoint = robotEndpoints.find((endpoint) => endpoint.enabled && endpoint.id !== activeEndpointId);
+  useEffect(() => { robotActions.connectRobot(); }, []);
   return (
     <PageContainer title="机器人控制中心" subtitle="移动机器人现场控制与建图工具" showSafetyBar>
       <SectionCard title="机器人连接" description={maskRobotAddress(baseUrl)} summary={<StatusBadge label={connectionStateText(status.connectionState)} tone={stateTone(status.connectionState)} />}>
+        {endpointSwitching ? <View style={styles.switching}><Text style={styles.switchingText}>正在切换机器人连接网络</Text></View> : null}
+        <View style={styles.statusGrid}>
+          <StatusCard title="当前连接网络" value={activeEndpoint?.label ?? '手工地址'} />
+          <StatusCard title="机器人地址" value={baseUrl.replace(/^https?:\/\//, '')} />
+          <StatusCard title="备用地址" value={alternateEndpoint ? `${alternateEndpoint.label}可用` : '未配置'} />
+        </View>
         <View style={styles.connectionMeta}><Text style={styles.metaLabel}>状态来源</Text><Text style={styles.metaValue}>{statusSourceText(statusSource)}</Text></View>
         <View style={styles.actions}>
           <AppButton label={status.online ? '刷新状态' : '连接机器人'} loading={pending.connectPending || pending.statusPending} onPress={() => status.online ? robotActions.refreshStatusBundle(true) : robotActions.connectRobot()} style={styles.action} />
@@ -54,6 +63,7 @@ export default function HomePage() {
 }
 
 const styles = StyleSheet.create({
+  switching: { borderWidth: 1, borderColor: colors.warning, backgroundColor: colors.warningSoft, borderRadius: radius.sm, padding: 10 }, switchingText: { color: colors.warning, fontWeight: '700' },
   connectionMeta: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 }, metaLabel: { color: colors.textMuted, fontSize: 13 }, metaValue: { color: colors.text, fontSize: 13, fontWeight: '600' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, action: { flex: 1, minWidth: 140 }, shortcutGrid: { gap: 10 },
   shortcut: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: radius.sm, backgroundColor: colors.panelSoft }, pressed: { opacity: 0.72 },

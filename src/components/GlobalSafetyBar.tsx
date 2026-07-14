@@ -25,10 +25,10 @@ export function GlobalSafetyBar() {
           label="紧急停止"
           variant="danger"
           loading={pending.controlPending}
-          onPress={() => robotActions.emergencyStop()}
+          onPress={() => robotActions.emergencyStopAllEndpoints()}
           style={styles.stop}
           accessibilityLabel="紧急停止机器人"
-          accessibilityHint="立即停止机器人运动"
+          accessibilityHint="向所有已知机器人地址发送停止请求"
         />
       </View>
     </View>

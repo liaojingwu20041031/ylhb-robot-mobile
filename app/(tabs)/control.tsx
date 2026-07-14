@@ -11,7 +11,7 @@ import { booleanStateText, connectionStateText, processStateText } from '@/utils
 import { freshnessLabel } from '@/utils/status';
 
 export default function ControlPage() {
-  const { status, debugStatus, systemStatus, pending } = useRobotStore((snapshot) => ({ status: snapshot.status, debugStatus: snapshot.debugStatus, systemStatus: snapshot.systemStatus, pending: snapshot.pending }));
+  const { status, debugStatus, systemStatus, pending, endpointSwitching } = useRobotStore((snapshot) => ({ status: snapshot.status, debugStatus: snapshot.debugStatus, systemStatus: snapshot.systemStatus, pending: snapshot.pending, endpointSwitching: snapshot.endpointSwitching }));
   useEffect(() => {
     robotActions.refreshSystemStatus(); robotActions.refreshDebugStatus();
     const timer = setInterval(() => { robotActions.refreshSystemStatus(); robotActions.refreshDebugStatus(); }, 1000);
@@ -24,9 +24,10 @@ export default function ControlPage() {
         <StatusCard title="运动通道" value={booleanStateText(debugStatus?.topics?.['/cmd_vel'])} technicalLabel="/cmd_vel" />
         <StatusCard title="里程计状态" value={freshnessLabel(debugStatus?.lastOdomAgeSec ?? status.lastOdomAgeSec)} technicalLabel="/odom" />
       </View></SectionCard>
+      {endpointSwitching ? <HelpText tone="warning">连接正在切换，运动控制暂不可用；急停按钮仍可使用。</HelpText> : null}
       <SectionCard title="基础驱动" description={`当前状态：${processStateText(systemStatus?.bringup?.running)}`} actions={<View style={styles.actions}>
-        <AppButton label="启动基础驱动" loading={pending.systemPending} onPress={() => robotActions.startBringup()} style={styles.action} />
-        <AppButton label="停止基础驱动" variant="warning" loading={pending.systemPending} onPress={() => robotActions.stopBringup()} style={styles.action} />
+        <AppButton label="启动基础驱动" disabled={endpointSwitching} loading={pending.systemPending} onPress={() => robotActions.startBringup()} style={styles.action} />
+        <AppButton label="停止基础驱动" variant="warning" disabled={endpointSwitching} loading={pending.systemPending} onPress={() => robotActions.stopBringup()} style={styles.action} />
       </View>}>
         {systemStatus?.bringup && !systemStatus.bringup.managed_by_bridge ? <HelpText tone="warning">该进程不是由本应用启动，请回到原终端停止。</HelpText> : null}
       </SectionCard>
