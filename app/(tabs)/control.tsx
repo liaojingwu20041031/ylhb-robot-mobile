@@ -15,7 +15,7 @@ export default function ControlPage() {
   useEffect(() => {
     robotActions.refreshSystemStatus(); robotActions.refreshDebugStatus();
     const timer = setInterval(() => { robotActions.refreshSystemStatus(); robotActions.refreshDebugStatus(); }, 1000);
-    return () => { clearInterval(timer); robotActions.emergencyStop(true); };
+    return () => { clearInterval(timer); };
   }, []);
   return (
     <PageContainer title="底盘控制" subtitle="按住方向键低速移动，松手立即停止。" showSafetyBar>

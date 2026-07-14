@@ -8,19 +8,6 @@ export type Pose = { frame: string; x: number; y: number; yaw: number };
 
 export type RobotVelocity = { linear_x: number; angular_z: number };
 
-export type RobotEndpointKind = 'wifi' | 'ethernet' | 'manual';
-
-export type RobotEndpoint = {
-  id: string;
-  label: string;
-  url: string;
-  kind: RobotEndpointKind;
-  enabled: boolean;
-  preferred?: boolean;
-  lastSuccessAt?: number;
-  lastFailureAt?: number;
-};
-
 export type RobotEndpointInfo = {
   interface?: string;
   type?: 'wifi' | 'ethernet' | 'other' | string;
@@ -29,6 +16,7 @@ export type RobotEndpointInfo = {
   port?: number;
   url: string;
   available?: boolean;
+  linkUp?: boolean;
 };
 
 export type NetworkInterfaceInfo = {
@@ -50,12 +38,16 @@ export type NetworkWarning = {
 
 export type RobotNetworkStatus = {
   appEndpoints?: RobotEndpointInfo[];
+  candidateEndpoints?: RobotEndpointInfo[];
   interfaces?: NetworkInterfaceInfo[];
   preferredAppEndpoint?: RobotEndpointInfo;
   warnings?: NetworkWarning[];
 };
 
 export type RobotStatus = {
+  apiVersion?: string;
+  robotId?: string;
+  bridgeInstanceId?: string;
   online: boolean;
   connectionState: RobotConnectionState;
   canStatus?: string;
@@ -83,9 +75,18 @@ export type ApiResponse<T> = {
   message?: string | null;
   data?: T | null;
   error?: string | null;
+  errorType?: RequestErrorType;
   timestamp?: number;
   diagnostics?: RequestDiagnostics;
 };
+
+export type RequestErrorType =
+  | 'timeout'
+  | 'network_error'
+  | 'http_4xx'
+  | 'http_5xx'
+  | 'business_error'
+  | 'aborted';
 
 export type RequestDiagnostics = {
   method: string;

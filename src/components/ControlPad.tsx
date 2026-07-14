@@ -55,7 +55,7 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
     activeDirectionRef.current = null;
   };
 
-  useEffect(() => () => stopHold(true), []);
+  useEffect(() => () => stopHold(), []);
 
   useEffect(() => {
     if (movementDisabled) {
@@ -77,14 +77,12 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
     return '按住方向键持续移动，松手立即停止。';
   }, [bridgeReady, cmdVelReady, commandDurationMs, endpointSwitching, mappingReady, mode, odomFresh, scanFresh, tfFresh]);
 
-  const stopHold = (quiet = false) => {
+  const stopHold = () => {
     const hadDirection = Boolean(activeDirectionRef.current);
     clearHold();
-    if (hadDirection || quiet) {
-      robotActions.emergencyStop(true);
-      if (!quiet) {
-        robotActions.addLog('user', '方向键已松开，已调用 /api/stop', undefined, '底盘控制');
-      }
+    if (hadDirection) {
+      void robotActions.chassisStop();
+      robotActions.addLog('user', '方向键已松开，已发送普通底盘停止', undefined, '底盘控制');
     }
   };
 
@@ -92,7 +90,7 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
     if (movementDisabled) {
       return;
     }
-    stopHold(true);
+    stopHold();
     activeDirectionRef.current = label;
     robotActions.addLog('user', `${label}开始：linear_x=${linear.toFixed(2)}, angular_z=${angular.toFixed(2)}`, undefined, '底盘控制');
     const send = () => {

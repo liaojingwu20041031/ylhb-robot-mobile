@@ -1,8 +1,11 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { robotActions } from '@/store/robotStore';
 import { colors } from '@/theme/consoleTheme';
 
 export default function Layout() {
+  useEffect(() => { void robotActions.initializeConnection(); }, []);
   return (
     <>
       <Stack

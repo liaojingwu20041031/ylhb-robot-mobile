@@ -46,6 +46,7 @@ function normalizeEndpointInfo(value: unknown): RobotEndpointInfo | null {
     port: Number.isFinite(Number(raw.port)) ? Number(raw.port) : undefined,
     url,
     available: raw.available === undefined ? undefined : Boolean(raw.available),
+    linkUp: raw.linkUp === undefined && raw.link_up === undefined ? undefined : Boolean(raw.linkUp ?? raw.link_up),
   };
 }
 
@@ -53,11 +54,15 @@ function normalizeNetwork(value: unknown): RobotNetworkStatus | undefined {
   const raw = asRecord(value);
   if (Object.keys(raw).length === 0) return undefined;
   const endpointRows = raw.appEndpoints ?? raw.app_endpoints;
+  const candidateRows = raw.candidateEndpoints ?? raw.candidate_endpoints;
   const interfaceRows = raw.interfaces ?? raw.networkInterfaces ?? raw.network_interfaces;
   const warningRows = raw.warnings ?? raw.networkWarnings ?? raw.network_warnings;
   const preferredRaw = raw.preferredAppEndpoint ?? raw.preferred_app_endpoint;
   const appEndpoints = Array.isArray(endpointRows)
     ? endpointRows.map(normalizeEndpointInfo).filter((item): item is RobotEndpointInfo => item !== null)
+    : [];
+  const candidateEndpoints = Array.isArray(candidateRows)
+    ? candidateRows.map(normalizeEndpointInfo).filter((item): item is RobotEndpointInfo => item !== null)
     : [];
   const interfaces: NetworkInterfaceInfo[] = Array.isArray(interfaceRows)
     ? interfaceRows.map((item) => {
@@ -83,6 +88,7 @@ function normalizeNetwork(value: unknown): RobotNetworkStatus | undefined {
     : [];
   return {
     appEndpoints,
+    candidateEndpoints,
     interfaces,
     preferredAppEndpoint: normalizeEndpointInfo(preferredRaw) ?? undefined,
     warnings,
@@ -93,6 +99,9 @@ function normalizeStatus(input: unknown): RobotStatus {
   const raw = asRecord(input);
   const connectionState = raw.connectionState ?? raw.connection_state;
   return {
+    apiVersion: typeof raw.apiVersion === 'string' ? raw.apiVersion : undefined,
+    robotId: typeof raw.robotId === 'string' ? raw.robotId : undefined,
+    bridgeInstanceId: typeof raw.bridgeInstanceId === 'string' ? raw.bridgeInstanceId : undefined,
     online: Boolean(raw.online),
     connectionState: ['disconnected', 'connecting', 'connected', 'error'].includes(String(connectionState))
       ? String(connectionState) as RobotStatus['connectionState']
@@ -168,7 +177,10 @@ export function createRobotApi(baseUrl: string) {
     request<null>(baseUrl, `/api/debug/system/${action}/${mode}`, { method: 'POST' });
 
   return {
-    getStatus: () => normalized<unknown, RobotStatus>(() => request<unknown>(baseUrl, '/api/status'), normalizeStatus),
+    getStatus: (timeoutMs = 3000, signal?: AbortSignal) => normalized<unknown, RobotStatus>(
+      () => request<unknown>(baseUrl, '/api/status', { timeoutMs, signal }),
+      normalizeStatus,
+    ),
     getDebugStatus: () => normalized<any, DebugStatus>(() => request<any>(baseUrl, '/api/debug/status'), normalizeDebugStatus),
     getSystemStatus: () => request<SystemStatus>(baseUrl, '/api/debug/system/status'),
     startBringup: () => systemProcess('start', 'bringup'),
@@ -184,9 +196,11 @@ export function createRobotApi(baseUrl: string) {
       request<null>(baseUrl, '/api/debug/chassis/stop', {
         method: 'POST',
       }),
-    emergencyStop: () =>
+    emergencyStop: (timeoutMs = 3000, signal?: AbortSignal) =>
       request<null>(baseUrl, '/api/stop', {
         method: 'POST',
+        timeoutMs,
+        signal,
       }),
     getMappingStatus: () =>
       normalized<any, MappingStatus>(() => request<any>(baseUrl, '/api/debug/mapping/status'), normalizeMappingStatus),
@@ -219,10 +233,13 @@ export function createRobotApi(baseUrl: string) {
     connectStatusWebSocket: (
       onStatus: (status: RobotStatus) => void,
       onError: (message: string) => void,
+      onOpen: () => void = () => undefined,
+      onClose: () => void = () => undefined,
     ): StatusSocket => {
       const wsUrl = trimBaseUrl(baseUrl).replace(/^http/i, 'ws') + '/ws/status';
       const socket = new WebSocket(wsUrl);
       let closedByClient = false;
+      socket.onopen = onOpen;
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as ApiResponse<unknown>;
@@ -243,7 +260,7 @@ export function createRobotApi(baseUrl: string) {
       socket.onerror = () => onError('WebSocket connection error');
       socket.onclose = () => {
         if (!closedByClient) {
-          onError('WebSocket closed');
+          onClose();
         }
       };
       return {
@@ -258,11 +275,13 @@ export function createRobotApi(baseUrl: string) {
       onSnapshot: (snapshot: MapSnapshot) => void,
       onFrameError: (message: string, error?: string | null) => void,
       onClose: () => void,
+      onOpen: () => void = () => undefined,
     ): MapSocket => {
       const safeDownsample = Math.max(1, Math.min(16, Math.round(downsample || 1)));
       const wsUrl = trimBaseUrl(baseUrl).replace(/^http/i, 'ws') + `/ws/map?downsample=${safeDownsample}`;
       const socket = new WebSocket(wsUrl);
       let closedByClient = false;
+      socket.onopen = onOpen;
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as ApiResponse<MapSnapshot>;

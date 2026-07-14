@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import { ApiResponse, RequestDiagnostics } from './types';
 
+export type RequestOptions = RequestInit & { timeoutMs?: number };
+
 export const trimBaseUrl = (baseUrl: string) => baseUrl.trim().replace(/\/+$/, '');
 
 const networkErrorSuggestions = [
@@ -48,19 +50,30 @@ function buildDiagnostics(
 export async function request<T>(
   baseUrl: string,
   path: string,
-  options?: RequestInit,
+  options: RequestOptions = {},
 ): Promise<ApiResponse<T>> {
   const startedAt = Date.now();
   const normalizedBaseUrl = trimBaseUrl(baseUrl);
   const url = `${normalizedBaseUrl}${path}`;
+  const { timeoutMs = 3000, signal: callerSignal, ...fetchOptions } = options;
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (callerSignal?.aborted) controller.abort();
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const response = await fetch(url, {
+      ...fetchOptions,
       headers: {
         Accept: 'application/json',
-        ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(options?.headers ?? {}),
+        ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(fetchOptions.headers ?? {}),
       },
-      ...options,
+      signal: controller.signal,
     });
     const json = (await response.json().catch(() => null)) as ApiResponse<T> | T | null;
     if (!response.ok) {
@@ -68,13 +81,16 @@ export async function request<T>(
       return {
         ok: false,
         error: envelope?.error ?? `http_${response.status}`,
+        errorType: response.status >= 500 ? 'http_5xx' : 'http_4xx',
         message: envelope?.message ?? response.statusText,
         diagnostics: buildDiagnostics(baseUrl, path, options, startedAt, response.status),
       };
     }
     if (json && typeof json === 'object' && 'ok' in json) {
+      const envelope = json as ApiResponse<T>;
       return {
-        ...(json as ApiResponse<T>),
+        ...envelope,
+        ...(!envelope.ok ? { errorType: 'business_error' as const } : {}),
         diagnostics: buildDiagnostics(baseUrl, path, options, startedAt, response.status),
       };
     }
@@ -84,11 +100,20 @@ export async function request<T>(
       diagnostics: buildDiagnostics(baseUrl, path, options, startedAt, response.status),
     };
   } catch (error) {
+    const errorType = timedOut
+      ? 'timeout'
+      : callerSignal?.aborted
+        ? 'aborted'
+        : 'network_error';
     return {
       ok: false,
-      error: 'network_error',
+      error: errorType,
+      errorType,
       message: error instanceof Error ? error.message : String(error),
       diagnostics: buildDiagnostics(baseUrl, path, options, startedAt, undefined, error),
     };
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 }
