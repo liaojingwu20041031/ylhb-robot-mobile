@@ -8,6 +8,53 @@ export type Pose = { frame: string; x: number; y: number; yaw: number };
 
 export type RobotVelocity = { linear_x: number; angular_z: number };
 
+export type RobotEndpointKind = 'wifi' | 'ethernet' | 'manual';
+
+export type RobotEndpoint = {
+  id: string;
+  label: string;
+  url: string;
+  kind: RobotEndpointKind;
+  enabled: boolean;
+  preferred?: boolean;
+  lastSuccessAt?: number;
+  lastFailureAt?: number;
+};
+
+export type RobotEndpointInfo = {
+  interface?: string;
+  type?: 'wifi' | 'ethernet' | 'other' | string;
+  label?: string;
+  address?: string;
+  port?: number;
+  url: string;
+  available?: boolean;
+};
+
+export type NetworkInterfaceInfo = {
+  name: string;
+  type: 'wifi' | 'ethernet' | 'other' | string;
+  label: string;
+  address: string;
+  prefixLength?: number;
+  gateway?: string;
+  defaultRoute?: boolean;
+  metric?: number | null;
+  up?: boolean;
+};
+
+export type NetworkWarning = {
+  code: string;
+  message: string;
+};
+
+export type RobotNetworkStatus = {
+  appEndpoints?: RobotEndpointInfo[];
+  interfaces?: NetworkInterfaceInfo[];
+  preferredAppEndpoint?: RobotEndpointInfo;
+  warnings?: NetworkWarning[];
+};
+
 export type RobotStatus = {
   online: boolean;
   connectionState: RobotConnectionState;
@@ -21,6 +68,7 @@ export type RobotStatus = {
   pose?: Pose | null;
   velocity?: RobotVelocity | null;
   batteryPercent?: number;
+  network?: RobotNetworkStatus;
   timestamp: number;
 };
 

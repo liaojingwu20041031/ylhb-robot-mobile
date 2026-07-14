@@ -16,7 +16,7 @@
 
 - 设备状态：连接、基础设备、传感器、建图与导航状态。
 - 运行日志：按警告、错误、用户操作、接口等类型筛选、复制和清空。
-- 连接设置：机器人服务地址、刷新频率和连接测试。
+- 连接设置：多个机器人访问地址、自动/手动选择、刷新频率和连接测试。
 
 旧 `/debug` 链接会重定向到“更多”。路由组不会改变 `/control`、`/mapping`、`/maps` 等公开 URL。
 
@@ -41,6 +41,30 @@
 - 首次底盘测试请架空轮子；地面操作前确保机器人周围无人。
 - 前端速度上限、API endpoint、HTTP 请求语义和 WebSocket fallback 均保持原实现。
 
+## 多网络机器人连接
+
+Mobile Bridge 可在 Wi-Fi 和 5G 有线网卡地址上同时提供同一套 HTTP/WebSocket 服务。
+手机仍只能访问当前手机网络可达的地址，因此应用保存多个 endpoint，并仅通过
+`GET /api/status` 顺序探测可达地址。旧版单一 `baseUrl` 会转换为手工地址且不会被清空；
+`baseUrl` 始终指向当前活动 endpoint，现有 API 调用保持兼容。
+
+机器人返回的 `appEndpoints` 先显示为“机器人发现的地址”，只有用户点击“导入地址”才
+合并，不覆盖手工输入或首选地址。自动切换仅发生在首次连接、活动地址的状态探测网络
+失败，或 WebSocket 断开且同地址状态探测也失败时。Status/Map WebSocket 各自使用
+generation，旧连接的延迟回调不会污染新连接状态。
+
+所有状态修改请求只使用当前活动地址，失败或超时后不会换地址透明重发，包括速度控制、
+驱动启停、建图启停、地图保存/重命名/删除/设默认、初始位姿和导航操作。原因是客户端
+无法确认第一次请求是否已在机器人执行。急停 `/api/stop` 是安全且幂等的例外，会通过
+`Promise.allSettled` 向全部启用地址并行发送；任一地址成功即认为急停已送达。地址切换
+期间方向控制禁用，急停按钮保持可用。
+
+机器人云平台连接与 APP 多入口不同：Jetson 始终只有一个 Cloud Client，由 Linux 默认
+路由 metric 选择 5G 主出口或 Wi-Fi 备用出口，避免重复 heartbeat、ACK、事件和命令。
+网卡/默认路由消失可以触发后续请求改走备用网络；有线 link 仍 up 但 5G CPE 的 WAN
+中断不在本轮自动切换范围。Wi-Fi 与有线使用同一子网时可能产生路由歧义，应先调整
+网络网段，不能由移动端自动修复。
+
 ## 开发
 
 ```bash
@@ -60,6 +84,24 @@ npx expo start
 npx expo export --platform android
 npx expo export --platform web
 ```
+
+Jetson 只修改源码并执行已有依赖条件下的 TypeScript 静态检查，不执行 Expo export、
+Gradle、EAS Build 或 APK 构建。移动端分支推送后，在 PC 上执行完整验证：
+
+```bash
+git fetch origin
+git switch feat/dual-network-access
+git pull --ff-only
+
+npm ci
+npm run typecheck
+npx expo-doctor
+npx expo export --platform android
+npx expo export --platform web
+```
+
+设置页继续复用项目原有卡片、按钮、配色和圆角体系；PC 验证时还应在目标手机尺寸检查
+地址列表换行、按钮触控区域和深浅色显示，避免多地址功能破坏原有视觉风格。
 
 ## Android APK
 
