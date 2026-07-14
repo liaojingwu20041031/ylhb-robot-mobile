@@ -1,8 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import { useSyncExternalStore } from 'react';
 import { createRobotApi } from '../api/robotApi';
-import type { MapSocket, StatusSocket } from '../api/robotApi';
-import { trimBaseUrl } from '../api/http';
 import {
   ApiResponse,
   AppLog,
@@ -18,9 +17,6 @@ import {
   MapSource,
   PendingState,
   RequestDiagnostics,
-  RobotEndpoint,
-  RobotEndpointInfo,
-  RobotEndpointKind,
   RobotStatus,
   SavedMap,
   StatusSource,
@@ -28,21 +24,18 @@ import {
   VelocityCommand,
 } from '../api/types';
 import {
-  chooseReachableEndpoint,
-  dedupeEndpoints,
-  endpointId,
-  isNetworkFailure,
-  normalizeEndpointUrl,
-  probeEndpoint,
-} from '../network/endpointManager';
+  DEFAULT_CONNECTION_CONFIG,
+  RobotConnectionController,
+  type ConnectionPhase,
+  type MapStreamPhase,
+  type RobotConnectionConfig,
+} from '../network/RobotConnectionController';
 import { buildStatusReport, formatLogs } from '../utils/status';
 
 type StoreState = {
   baseUrl: string;
-  robotEndpoints: RobotEndpoint[];
-  discoveredRobotEndpoints: RobotEndpoint[];
-  activeEndpointId?: string;
-  connectionMode: 'auto' | 'manual';
+  connectionConfig: RobotConnectionConfig;
+  connectionPhase: ConnectionPhase;
   endpointSwitching: boolean;
   endpointSwitchMessage?: string;
   connectionState: RobotStatus['connectionState'];
@@ -61,6 +54,7 @@ type StoreState = {
   lastMapManageError?: string;
   lastMapPreviewError?: string;
   mapSource: MapSource;
+  mapStreamState: MapStreamPhase;
   mapStreamConnected: boolean;
   lastMapFrameAt?: number;
   lastMapError?: string;
@@ -70,17 +64,12 @@ type StoreState = {
   logs: AppLog[];
   pending: PendingState;
   httpTest?: ConnectionTestResult;
-  websocketTest?: ConnectionTestResult;
 };
 
-const DEFAULT_BASE_URL = 'http://192.168.137.100:8000';
-const DEFAULT_ENDPOINT: RobotEndpoint = {
-  id: endpointId(DEFAULT_BASE_URL, 'manual'),
-  label: '默认热点地址',
-  url: DEFAULT_BASE_URL,
-  kind: 'manual',
-  enabled: true,
-  preferred: true,
+const DEFAULT_CONFIG: RobotConnectionConfig = {
+  ...DEFAULT_CONNECTION_CONFIG,
+  primaryUrl: 'http://192.168.137.100:8000',
+  fallbackUrl: 'http://192.168.8.20:8000',
 };
 const startupLog: AppLog = {
   id: 'startup',
@@ -113,18 +102,17 @@ const initialPending: PendingState = {
 };
 
 let state: StoreState = {
-  baseUrl: DEFAULT_BASE_URL,
-  robotEndpoints: [DEFAULT_ENDPOINT],
-  discoveredRobotEndpoints: [],
-  activeEndpointId: DEFAULT_ENDPOINT.id,
-  connectionMode: 'auto',
+  baseUrl: DEFAULT_CONFIG.primaryUrl,
+  connectionConfig: DEFAULT_CONFIG,
+  connectionPhase: 'idle',
   endpointSwitching: false,
   connectionState: 'disconnected',
-  refreshIntervalMs: 1000,
+  refreshIntervalMs: DEFAULT_CONFIG.refreshIntervalMs,
   statusSource: '未知',
   status: initialStatus,
   debugMaps: [],
   mapSource: 'none',
+  mapStreamState: 'idle',
   mapStreamConnected: false,
   linearSpeed: 0.3,
   angularSpeed: 0.55,
@@ -133,12 +121,6 @@ let state: StoreState = {
   pending: initialPending,
 };
 
-let socket: StatusSocket | null = null;
-let mapSocket: MapSocket | null = null;
-let statusSocketGeneration = 0;
-let mapSocketGeneration = 0;
-let statusReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let statusReconnectAttempt = 0;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -168,76 +150,6 @@ function addLog(type: AppLogType, message: string, detail?: string, source = 'AP
 
 function api() {
   return createRobotApi(state.baseUrl);
-}
-
-function endpointKind(value?: string): RobotEndpointKind {
-  return value === 'wifi' || value === 'ethernet' ? value : 'manual';
-}
-
-function discoveredEndpoint(info: RobotEndpointInfo, preferredUrl?: string): RobotEndpoint | null {
-  const url = normalizeEndpointUrl(info.url);
-  if (!url) return null;
-  const kind = endpointKind(info.type);
-  return {
-    id: endpointId(url, kind),
-    label: info.label || (kind === 'wifi' ? 'Wi-Fi 网络' : kind === 'ethernet' ? '5G 有线网络' : '机器人地址'),
-    url,
-    kind,
-    enabled: info.available !== false,
-    preferred: url === preferredUrl,
-  };
-}
-
-function discoveredEndpointsFromStatus(status: RobotStatus): RobotEndpoint[] {
-  const preferredUrl = normalizeEndpointUrl(status.network?.preferredAppEndpoint?.url ?? '') ?? undefined;
-  return dedupeEndpoints(
-    (status.network?.appEndpoints ?? [])
-      .map((info) => discoveredEndpoint(info, preferredUrl))
-      .filter((endpoint): endpoint is RobotEndpoint => endpoint !== null),
-  );
-}
-
-function endpointsWithProbeResults(
-  endpoints: RobotEndpoint[],
-  attempts: Awaited<ReturnType<typeof chooseReachableEndpoint>>['attempts'],
-): RobotEndpoint[] {
-  const byId = new Map(attempts.map((attempt) => [attempt.endpoint.id, attempt]));
-  const now = Date.now();
-  return endpoints.map((endpoint) => {
-    const attempt = byId.get(endpoint.id);
-    if (!attempt) return endpoint;
-    return attempt.ok
-      ? { ...endpoint, lastSuccessAt: now }
-      : { ...endpoint, lastFailureAt: now };
-  });
-}
-
-function closeStatusSocket() {
-  statusSocketGeneration += 1;
-  if (statusReconnectTimer) {
-    clearTimeout(statusReconnectTimer);
-    statusReconnectTimer = null;
-  }
-  statusReconnectAttempt = 0;
-  socket?.close();
-  socket = null;
-}
-
-async function emergencyStopAllEndpointsInternal(quiet = false) {
-  const endpoints = state.robotEndpoints.filter((endpoint) => endpoint.enabled && normalizeEndpointUrl(endpoint.url));
-  const results = await Promise.allSettled(
-    endpoints.map((endpoint) => createRobotApi(endpoint.url).emergencyStop()),
-  );
-  const success = results.some((result) => result.status === 'fulfilled' && result.value.ok);
-  if (!quiet) {
-    addLog(
-      success ? 'user' : 'error',
-      success ? '急停已向可用机器人地址发送' : '所有机器人地址的急停请求均失败',
-      undefined,
-      '底盘控制',
-    );
-  }
-  return success;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -336,83 +248,65 @@ async function run<T>(
   }
 }
 
-function updateConnection(connectionState: RobotStatus['connectionState'], online = connectionState === 'connected') {
-  setState({
-    connectionState,
-    status: { ...state.status, connectionState, online },
-  });
-}
+const connectionController = new RobotConnectionController({
+  probe: (url, signal) => createRobotApi(url).getStatus(2000, signal),
+  getStatus: (url, signal) => createRobotApi(url).getStatus(3000, signal),
+  emergencyStop: (url, signal) => createRobotApi(url).emergencyStop(1500, signal),
+  openStatusSocket: (url, callbacks) => createRobotApi(url).connectStatusWebSocket(
+    callbacks.onStatus,
+    callbacks.onError,
+    callbacks.onOpen,
+    callbacks.onClose,
+  ),
+  openMapSocket: (url, callbacks) => createRobotApi(url).connectMapWebSocket(
+    1,
+    callbacks.onSnapshot,
+    (message, error) => callbacks.onError(error ? `${message} (${error})` : message),
+    callbacks.onClose,
+    callbacks.onOpen,
+  ),
+  storage: {
+    getItem: (key) => AsyncStorage.getItem(key),
+    setItem: (key, value) => AsyncStorage.setItem(key, value),
+    removeItem: (key) => AsyncStorage.removeItem(key),
+  },
+  onChange: (snapshot) => {
+    const connectionState: RobotStatus['connectionState'] = snapshot.phase === 'connected'
+      ? 'connected'
+      : snapshot.phase === 'probing' || snapshot.phase === 'switching'
+        ? 'connecting'
+        : snapshot.phase === 'error' || snapshot.phase === 'degraded'
+          ? 'error'
+          : 'disconnected';
+    setState({
+      baseUrl: snapshot.activeUrl ?? snapshot.config.primaryUrl,
+      connectionConfig: snapshot.config,
+      connectionPhase: snapshot.phase,
+      connectionState,
+      endpointSwitching: snapshot.phase === 'probing' || snapshot.phase === 'switching',
+      endpointSwitchMessage: snapshot.error,
+      refreshIntervalMs: snapshot.config.refreshIntervalMs,
+      statusSource: snapshot.statusSource ?? state.statusSource,
+      status: snapshot.status
+        ? { ...snapshot.status, connectionState, online: snapshot.phase === 'connected' }
+        : { ...state.status, connectionState, online: snapshot.phase === 'connected' },
+      mapStreamState: snapshot.mapPhase,
+      mapStreamConnected: snapshot.mapPhase === 'connected',
+      lastMapError: snapshot.mapError,
+    });
+  },
+  onMapSnapshot: (snapshot) => setState({
+    mapSnapshot: snapshot,
+    mapSource: 'ws',
+    mapStreamConnected: true,
+    mapStreamState: 'connected',
+    lastMapFrameAt: Date.now(),
+    lastMapError: undefined,
+  }),
+}, DEFAULT_CONFIG);
+let connectionInitialization: Promise<void> | undefined;
+let connectPendingOperation = 0;
 
-function openStatusSocket() {
-  if (socket || state.endpointSwitching) {
-    return;
-  }
-  if (statusReconnectTimer) {
-    clearTimeout(statusReconnectTimer);
-    statusReconnectTimer = null;
-  }
-  const endpointUrl = state.baseUrl;
-  const generation = ++statusSocketGeneration;
-  let failureHandled = false;
-  socket = createRobotApi(endpointUrl).connectStatusWebSocket(
-    (status) => {
-      if (generation !== statusSocketGeneration) return;
-      statusReconnectAttempt = 0;
-      setState({
-        connectionState: 'connected',
-        statusSource: 'WebSocket',
-        status: { ...status, connectionState: 'connected', online: true },
-        discoveredRobotEndpoints: discoveredEndpointsFromStatus(status),
-      });
-    },
-    (message) => {
-      if (generation !== statusSocketGeneration || failureHandled) return;
-      failureHandled = true;
-      addLog('warn', `${message}，状态来源降级为 HTTP fallback`, undefined, 'WebSocket');
-      setState({ statusSource: 'HTTP fallback' });
-      socket = null;
-      void verifyActiveEndpointAfterSocketFailure('Status WebSocket 已断开');
-    },
-  );
-  addLog('info', `已尝试打开 ${endpointUrl}/ws/status 状态流`, undefined, 'WebSocket');
-}
-
-function closeMapSocket() {
-  mapSocketGeneration += 1;
-  mapSocket?.close();
-  mapSocket = null;
-  setState({ mapStreamConnected: false });
-}
-
-async function verifyActiveEndpointAfterSocketFailure(message: string) {
-  if (state.endpointSwitching) return;
-  const response = await createRobotApi(state.baseUrl).getStatus();
-  if (response.ok && response.data?.online) {
-    if (statusReconnectAttempt < 3) {
-      const delays = [1000, 2000, 5000];
-      const delay = delays[statusReconnectAttempt] ?? 5000;
-      statusReconnectAttempt += 1;
-      statusReconnectTimer = setTimeout(() => openStatusSocket(), delay);
-    }
-    return;
-  }
-  addLog('warn', `${message}，活动地址状态探测失败，开始选择备用地址`, undefined, '网络切换');
-  await robotActions.connectRobot();
-}
-
-async function refreshAllForConnection() {
-  const [debugStatus, systemStatus, mappingStatus] = await Promise.all([
-    api().getDebugStatus(),
-    api().getSystemStatus(),
-    api().getMappingStatus(),
-  ]);
-  applyResponse('GET /api/debug/status', debugStatus);
-  applyResponse('GET /api/debug/system/status', systemStatus);
-  applyResponse('GET /api/debug/mapping/status', mappingStatus);
-  if (debugStatus.ok && debugStatus.data) setState({ debugStatus: debugStatus.data });
-  if (systemStatus.ok && systemStatus.data) setState({ systemStatus: systemStatus.data });
-  if (mappingStatus.ok && mappingStatus.data) setState({ mappingStatus: mappingStatus.data });
-}
 
 export const robotActions = {
   subscribe(listener: () => void) {
@@ -427,211 +321,52 @@ export const robotActions = {
     setState({ logs: [] });
     addLog('info', '日志已清空', undefined, '日志');
   },
-  saveSettings(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
-    const normalizedBaseUrl = normalizeEndpointUrl(baseUrl);
-    if (!normalizedBaseUrl) {
-      setState({ endpointSwitchMessage: '地址格式无效：只允许 http:// 或 https://，且不能包含路径、查询参数、账号或 Token' });
-      return false;
-    }
-    closeStatusSocket();
-    closeMapSocket();
-    const current = state.robotEndpoints.find((endpoint) => endpoint.id === state.activeEndpointId);
-    const manualEndpoint: RobotEndpoint = {
-      id: endpointId(normalizedBaseUrl, 'manual'),
-      label: current?.kind === 'manual' ? current.label : '手工地址',
-      url: normalizedBaseUrl,
-      kind: 'manual',
-      enabled: true,
-      preferred: current?.preferred ?? state.robotEndpoints.length === 0,
-    };
-    const remaining = state.robotEndpoints.filter((endpoint) => endpoint.id !== current?.id);
-    setState({
-      baseUrl: normalizedBaseUrl,
-      robotEndpoints: dedupeEndpoints([...remaining, manualEndpoint]),
-      activeEndpointId: manualEndpoint.id,
-      refreshIntervalMs,
-      statusSource: '未知',
-      mapSource: 'none',
-      httpTest: undefined,
-      websocketTest: undefined,
-      endpointSwitchMessage: undefined,
-    });
-    addLog(
-      'info',
-      `Jetson Base URL 已保存：${normalizedBaseUrl}`,
-      undefined,
-      '设置',
-    );
-    return true;
+  async initializeConnection() {
+    connectionInitialization ??= connectionController.initialize();
+    await connectionInitialization;
   },
-  async saveSettingsAndConnect(baseUrl: string, refreshIntervalMs = state.refreshIntervalMs) {
-    if (!robotActions.saveSettings(baseUrl, refreshIntervalMs)) {
-      return { ok: false, message: '机器人地址格式无效', timestamp: Date.now() } as ConnectionTestResult;
-    }
+  async saveConnectionConfigAndConnect(config: RobotConnectionConfig) {
+    const saved = await connectionController.saveConnectionConfig(config);
+    if (!saved) return { ok: false, message: '机器人地址格式无效', timestamp: Date.now() } as ConnectionTestResult;
     return robotActions.connectRobot();
   },
-  saveEndpoint(endpoint: RobotEndpoint) {
-    const url = normalizeEndpointUrl(endpoint.url);
-    if (!url) {
-      setState({ endpointSwitchMessage: '地址格式无效：不能包含 /api/status、查询参数、账号或 Token' });
-      return false;
-    }
-    const normalized = { ...endpoint, id: endpointId(url, endpoint.kind), url };
-    const endpoints = dedupeEndpoints([
-      ...state.robotEndpoints.filter((item) => item.id !== endpoint.id),
-      normalized,
-    ]);
-    const activeEndpointId = state.activeEndpointId === endpoint.id ? normalized.id : state.activeEndpointId;
-    setState({
-      robotEndpoints: endpoints,
-      activeEndpointId,
-      baseUrl: activeEndpointId === normalized.id ? normalized.url : state.baseUrl,
-      endpointSwitchMessage: undefined,
-    });
-    return true;
+  async setRefreshInterval(refreshIntervalMs: number) {
+    await connectionController.setRefreshInterval(refreshIntervalMs);
+    addLog('user', `状态刷新周期已保存：${refreshIntervalMs}ms`, undefined, '设置');
   },
-  removeEndpoint(id: string) {
-    const endpoints = state.robotEndpoints.filter((endpoint) => endpoint.id !== id);
-    const fallback = endpoints.find((endpoint) => endpoint.enabled) ?? endpoints[0];
-    setState({
-      robotEndpoints: endpoints,
-      activeEndpointId: state.activeEndpointId === id ? fallback?.id : state.activeEndpointId,
-      baseUrl: state.activeEndpointId === id && fallback ? fallback.url : state.baseUrl,
-    });
+  async testConnectionEndpoint(which: 'primary' | 'fallback') {
+    const started = Date.now();
+    const response = await connectionController.testEndpoint(which);
+    const label = which === 'primary' ? '主地址' : '备用地址';
+    const result: ConnectionTestResult = {
+      ok: response.ok,
+      message: response.ok ? `${label}可达` : response.message ?? response.error ?? `${label}不可达`,
+      latencyMs: Date.now() - started,
+      timestamp: Date.now(),
+    };
+    setState({ httpTest: result, endpointSwitchMessage: result.message });
+    return result;
   },
-  setEndpointEnabled(id: string, enabled: boolean) {
-    setState({ robotEndpoints: state.robotEndpoints.map((endpoint) => endpoint.id === id ? { ...endpoint, enabled } : endpoint) });
-  },
-  setPreferredEndpoint(id: string) {
-    setState({ robotEndpoints: state.robotEndpoints.map((endpoint) => ({ ...endpoint, preferred: endpoint.id === id })) });
-  },
-  setConnectionMode(connectionMode: 'auto' | 'manual') {
-    setState({ connectionMode });
-  },
-  activateEndpoint(id: string) {
-    const endpoint = state.robotEndpoints.find((item) => item.id === id);
-    if (!endpoint) return;
-    closeStatusSocket();
-    closeMapSocket();
-    setState({ activeEndpointId: id, baseUrl: endpoint.url, connectionMode: 'manual' });
-  },
-  importDiscoveredEndpoints() {
-    setState({
-      robotEndpoints: dedupeEndpoints([
-        ...state.robotEndpoints,
-        ...state.discoveredRobotEndpoints.map((endpoint) => ({ ...endpoint, preferred: false })),
-      ]),
-      endpointSwitchMessage: '已导入机器人发现的地址，手工地址保持不变',
-    });
-  },
-  async testEndpoint(id: string) {
-    const endpoint = state.robotEndpoints.find((item) => item.id === id)
-      ?? state.discoveredRobotEndpoints.find((item) => item.id === id);
-    if (!endpoint) return { ok: false, message: '地址不存在', timestamp: Date.now() } as ConnectionTestResult;
-    const result = await probeEndpoint(endpoint);
-    setState({
-      robotEndpoints: state.robotEndpoints.map((item) => item.id === id
-        ? { ...item, ...(result.ok ? { lastSuccessAt: Date.now() } : { lastFailureAt: Date.now() }) }
-        : item),
-      endpointSwitchMessage: `${endpoint.label}: ${result.reason}`,
-    });
-    return { ok: result.ok, message: result.reason, latencyMs: result.latencyMs, timestamp: Date.now() } as ConnectionTestResult;
-  },
-  restoreDefaults() {
-    closeStatusSocket();
-    closeMapSocket();
-    setState({
-      baseUrl: DEFAULT_BASE_URL,
-      robotEndpoints: [DEFAULT_ENDPOINT],
-      discoveredRobotEndpoints: [],
-      activeEndpointId: DEFAULT_ENDPOINT.id,
-      connectionMode: 'auto',
-      endpointSwitching: false,
-      endpointSwitchMessage: undefined,
-      refreshIntervalMs: 1000,
-      statusSource: '未知',
-      mapSource: 'none',
-      httpTest: undefined,
-      websocketTest: undefined,
-    });
-    addLog('user', '已恢复默认 Jetson 地址和刷新间隔', undefined, '设置');
+  async restoreDefaults() {
+    await connectionController.saveConnectionConfig(DEFAULT_CONFIG);
+    addLog('user', '已恢复默认主备地址和刷新周期', undefined, '设置');
   },
   async connectRobot() {
+    const operation = ++connectPendingOperation;
     setPending('connectPending', true);
-    setState({ endpointSwitching: true, endpointSwitchMessage: '正在切换机器人连接网络' });
-    updateConnection('connecting', false);
-    await emergencyStopAllEndpointsInternal(true);
-    closeStatusSocket();
-    closeMapSocket();
-    const candidates = state.connectionMode === 'manual'
-      ? state.robotEndpoints.filter((endpoint) => endpoint.id === state.activeEndpointId)
-      : state.robotEndpoints;
-    addLog('debug', `准备探测 ${candidates.filter((endpoint) => endpoint.enabled).length} 个机器人地址`, undefined, '网络切换');
     try {
-      const result = await chooseReachableEndpoint(candidates, state.activeEndpointId);
-      const robotEndpoints = endpointsWithProbeResults(state.robotEndpoints, result.attempts);
-      if (result.endpoint && result.status) {
-        setState({
-          robotEndpoints,
-          baseUrl: result.endpoint.url,
-          activeEndpointId: result.endpoint.id,
-          connectionState: 'connected',
-          statusSource: 'HTTP fallback',
-          status: { ...result.status, connectionState: 'connected', online: true },
-          discoveredRobotEndpoints: discoveredEndpointsFromStatus(result.status),
-          endpointSwitching: false,
-          endpointSwitchMessage: `已连接 ${result.endpoint.label}`,
-        });
-        await refreshAllForConnection();
-        openStatusSocket();
-        return { ok: true, message: `机器人连接成功：${result.endpoint.label}`, timestamp: Date.now() } as ConnectionTestResult;
-      }
-      updateConnection('error', false);
-      const message = result.attempts.length
-        ? result.attempts.map((attempt) => `${attempt.endpoint.label}: ${attempt.reason}`).join('；')
-        : '没有启用且格式有效的机器人地址';
-      setState({ robotEndpoints, statusSource: 'HTTP fallback', endpointSwitching: false, endpointSwitchMessage: message });
-      return { ok: false, message, timestamp: Date.now() } as ConnectionTestResult;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      updateConnection('error', false);
-      setState({ endpointSwitching: false, endpointSwitchMessage: `切换失败：${message}` });
-      addLog('error', `机器人地址切换失败：${message}`, undefined, '网络切换');
-      return { ok: false, message, timestamp: Date.now() } as ConnectionTestResult;
+      const response = await connectionController.connect();
+      return {
+        ok: response.ok,
+        message: response.ok ? `机器人连接成功：${connectionController.snapshot.activeUrl}` : response.message ?? response.error ?? '连接失败',
+        timestamp: Date.now(),
+      } as ConnectionTestResult;
     } finally {
-      setPending('connectPending', false);
-    }
-  },
-  startStatusSocket() {
-    if (!state.status.online) {
-      void robotActions.connectRobot();
-      return;
-    }
-    openStatusSocket();
-  },
-  stopStatusSocket(log = true) {
-    closeStatusSocket();
-    if (log) {
-      addLog('info', 'WebSocket 状态流已关闭', undefined, 'WebSocket');
+      if (operation === connectPendingOperation) setPending('connectPending', false);
     }
   },
   async refreshStatus(logSuccess = false) {
-    const response = await run('GET /api/status', () => api().getStatus(), logSuccess ? 'statusPending' : undefined, logSuccess);
-    if (response.ok && response.data) {
-      setState({
-        connectionState: 'connected',
-        statusSource: state.statusSource === 'WebSocket' ? 'WebSocket' : 'HTTP fallback',
-        status: { ...response.data, connectionState: 'connected', online: true },
-        discoveredRobotEndpoints: discoveredEndpointsFromStatus(response.data),
-      });
-    } else {
-      updateConnection('error', false);
-      setState({ statusSource: 'HTTP fallback' });
-      if (isNetworkFailure(response) && !state.endpointSwitching) {
-        void robotActions.connectRobot();
-      }
-    }
-    return response;
+    return run('GET /api/status', () => connectionController.refreshStatus(), logSuccess ? 'statusPending' : undefined, logSuccess);
   },
   async refreshDebugStatus(logSuccess = false) {
     const response = await run('GET /api/debug/status', () => api().getDebugStatus(), logSuccess ? 'statusPending' : undefined, logSuccess);
@@ -662,41 +397,6 @@ export const robotActions = {
       robotActions.refreshMappingStatus(logSuccess),
     ]);
   },
-  async testHttpConnection() {
-    const started = Date.now();
-    addLog('debug', `测试 HTTP 连接：${trimBaseUrl(state.baseUrl)}/api/status`, undefined, '诊断');
-    const response = await robotActions.refreshStatus(true);
-    const result: ConnectionTestResult = {
-      ok: response.ok,
-      message: response.ok ? '/api/status 正常' : response.message ?? response.error ?? '/api/status 失败',
-      latencyMs: Date.now() - started,
-      timestamp: Date.now(),
-    };
-    setState({ httpTest: result });
-    if (response.ok) {
-      addLog(
-        'api',
-        `测试 HTTP 连接成功：${response.diagnostics?.url ?? `${trimBaseUrl(state.baseUrl)}/api/status`}`,
-        formatDiagnostics(response.diagnostics),
-        'Bridge',
-      );
-    }
-    return result;
-  },
-  async testWebSocket() {
-    const started = Date.now();
-    try {
-      openStatusSocket();
-      const result = { ok: true, message: '已尝试连接 /ws/status，请观察状态来源', latencyMs: Date.now() - started, timestamp: Date.now() };
-      setState({ websocketTest: result });
-      return result;
-    } catch (error) {
-      const result = { ok: false, message: error instanceof Error ? error.message : String(error), latencyMs: Date.now() - started, timestamp: Date.now() };
-      setState({ websocketTest: result });
-      addLog('error', result.message, undefined, 'WebSocket');
-      return result;
-    }
-  },
   setLinearSpeed(value: number) {
     setState({ linearSpeed: clamp(value, 0.01, 0.35) });
   },
@@ -718,15 +418,19 @@ export const robotActions = {
     }
     return run('POST /api/debug/chassis/stop', () => api().chassisStop(), 'controlPending');
   },
-  async emergencyStop(quiet = false) {
-    return run('POST /api/stop', () => api().emergencyStop(), quiet ? undefined : 'controlPending', !quiet);
-  },
-  async emergencyStopAllEndpoints(quiet = false) {
-    if (!quiet) setPending('controlPending', true);
+  async emergencyStopAllEndpoints() {
+    setPending('controlPending', true);
     try {
-      return await emergencyStopAllEndpointsInternal(quiet);
+      const success = await connectionController.emergencyStop();
+      addLog(
+        success ? 'user' : 'error',
+        success ? '急停已送达机器人' : '急停请求未送达',
+        undefined,
+        '底盘控制',
+      );
+      return success;
     } finally {
-      if (!quiet) setPending('controlPending', false);
+      setPending('controlPending', false);
     }
   },
   async startBringup() {
@@ -748,7 +452,7 @@ export const robotActions = {
     return response;
   },
   async startMapping() {
-    closeMapSocket();
+    connectionController.stopMapStream();
     setState({ mapSnapshot: undefined, savedMap: undefined, mapSource: 'none', lastMapError: undefined });
     const response = await run('POST /api/debug/system/start/mapping', () => api().startMapping(), 'mappingStatusPending');
     await robotActions.refreshSystemStatus();
@@ -757,7 +461,7 @@ export const robotActions = {
   },
   async stopMapping() {
     const response = await run('POST /api/debug/system/stop/mapping', () => api().stopMapping(), 'mappingStatusPending');
-    closeMapSocket();
+    connectionController.stopMapStream();
     setState({ mapSnapshot: undefined, savedMap: undefined, mapSource: 'none', lastMapError: undefined });
     await robotActions.refreshSystemStatus();
     await robotActions.refreshMappingStatus();
@@ -778,42 +482,11 @@ export const robotActions = {
     return response;
   },
   startMapStream(downsample = 1) {
-    if (mapSocket || state.endpointSwitching) {
-      return;
-    }
-    const endpointUrl = state.baseUrl;
-    const generation = ++mapSocketGeneration;
-    mapSocket = createRobotApi(endpointUrl).connectMapWebSocket(
-      downsample,
-      (snapshot) => {
-        if (generation !== mapSocketGeneration) return;
-        setState({
-          mapSnapshot: snapshot,
-          mapSource: 'ws',
-          mapStreamConnected: true,
-          lastMapFrameAt: Date.now(),
-          lastMapError: undefined,
-        });
-      },
-      (message, error) => {
-        if (generation !== mapSocketGeneration) return;
-        setState({
-          mapStreamConnected: true,
-          lastMapError: error ? `${message} (${error})` : message,
-        });
-      },
-      () => {
-        if (generation !== mapSocketGeneration) return;
-        mapSocket = null;
-        setState({ mapStreamConnected: false, mapSource: state.mapSnapshot ? 'http' : 'none' });
-        void verifyActiveEndpointAfterSocketFailure('Map WebSocket 已断开');
-      },
-    );
-    setState({ mapStreamConnected: true });
-    addLog('info', `已连接 ${endpointUrl}/ws/map?downsample=${downsample} 地图流`, undefined, 'WebSocket');
+    if (downsample !== 1) addLog('debug', '地图流由连接控制器固定使用 downsample=1', undefined, 'WebSocket');
+    connectionController.startMapStream();
   },
   stopMapStream() {
-    closeMapSocket();
+    connectionController.stopMapStream();
   },
   async saveMapping(body: MappingSaveRequest) {
     const response = await run('POST /api/debug/mapping/save', () => api().saveMapping(body), 'mapSavePending');

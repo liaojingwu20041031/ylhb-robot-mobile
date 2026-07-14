@@ -25,11 +25,15 @@ export default function MappingPage() {
 
   useEffect(() => {
     robotActions.refreshDebugStatus(); robotActions.refreshSystemStatus(); robotActions.refreshMappingStatus(); robotActions.startMapStream(1);
+    return () => { robotActions.stopMapStream(); };
+  }, []);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       robotActions.refreshMappingStatus(); robotActions.refreshDebugStatus();
       if (!mapStreamConnected) robotActions.refreshMapSnapshot(1);
     }, 1000);
-    return () => { clearInterval(timer); robotActions.stopMapStream(); };
+    return () => { clearInterval(timer); };
   }, [mapStreamConnected]);
 
   const imageUri = mapSnapshot?.png_base64 ? `data:image/png;base64,${mapSnapshot.png_base64}` : undefined;
