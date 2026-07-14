@@ -1,61 +1,80 @@
-# 智能机器人调试
+# 机器人控制中心
 
-手机端机器人调试 APP。APP 不直连 ROS2 DDS，只通过 Jetson 上的 `ylhb_mobile_bridge` 使用 HTTP/WebSocket 查看状态、控制底盘、辅助建图和保存地图。
+面向移动机器人现场操作的 Expo / React Native 应用，提供连接检查、底盘低速控制、实时建图、地图管理和运行日志。应用只通过 Jetson 上的 `ylhb_mobile_bridge` 使用 HTTP/WebSocket 与机器人通信，不直接连接 ROS2 DDS。
 
-## 功能
+## 导航与页面
 
-- 连接 Jetson bridge，检查 HTTP 与 WebSocket 状态。
-- 查看 `/cmd_vel`、`/odom`、`/scan`、`/imu/data`、`/map`、TF、ZLAC、Nav2 状态。
-- 启动/关闭底层进程（bringup）和建图进程（mapping）。
-- 底盘点动控制，支持滑条调节线速度和角速度。
-- 建图页实时预览地图，并提供底部固定点动控制。
-- 保存地图并查看现场 API/错误日志。
+底部导航包含五个主要入口：
 
-## 技术栈
+- 首页：机器人连接、安全操作、快捷入口和关键状态摘要。
+- 控制：基础驱动管理、速度调节、按住点动、停止与紧急停止。
+- 建图：实时地图、三步建图流程、地图保存和建图点动控制。
+- 地图：预览、设为默认、重命名、删除与文件详情。
+- 更多：设备状态、运行日志、连接设置和应用说明。
 
-- Expo React Native
-- TypeScript
-- expo-router
-- Jetson `ylhb_mobile_bridge`（HTTP/WebSocket -> ROS2）
+详情页面保留系统返回按钮：
 
-## 运行
+- 设备状态：连接、基础设备、传感器、建图与导航状态。
+- 运行日志：按警告、错误、用户操作、接口等类型筛选、复制和清空。
+- 连接设置：机器人服务地址、刷新频率和连接测试。
+
+旧 `/debug` 链接会重定向到“更多”。路由组不会改变 `/control`、`/mapping`、`/maps` 等公开 URL。
+
+## 中文状态显示
+
+界面不会修改 API 原始字段，只在展示层转换为中文。例如：
+
+- `connected` → 已连接，`connecting` → 正在连接。
+- `WebSocket` → 实时连接，`HTTP fallback` → 轮询连接。
+- `running` → 运行中，`not_running` → 未运行。
+- `/cmd_vel` → 运动指令通道，`/scan` → 激光雷达。
+- `bringup` → 基础驱动，`slam_toolbox` → 建图引擎。
+
+技术 Topic、Node 和进程名仍会作为小号辅助信息或复制报告内容保留，便于现场排查。
+
+## 安全控制
+
+- 点动按钮仅在机器人连接和运动通道可用时启用。
+- 按住方向键会周期发送短时速度命令，松手立即调用急停接口。
+- 离开控制页面时仍会发送急停。
+- 建图点动还会检查里程计、激光雷达和坐标变换状态。
+- 首次底盘测试请架空轮子；地面操作前确保机器人周围无人。
+- 前端速度上限、API endpoint、HTTP 请求语义和 WebSocket fallback 均保持原实现。
+
+## 开发
 
 ```bash
-npm install
+npm ci
+npm run typecheck
+npx expo-doctor
 npx expo start
 ```
 
-手机安装 Expo Go 后扫描二维码预览。
+优先使用 Expo Go 扫码调试。当前依赖不要求自定义原生模块；如后续加入 Expo Go 不支持的原生能力，再使用 development build。
 
-## 调试流程
+仓库已提交原生 Android 工程，`app.json` 变更后需要同步检查原生配置；Expo Doctor 中对应的非 CNG 提示已按该工作流关闭。Android Manifest 继续保留局域网 HTTP 所需的 cleartext 配置。
 
-1. 在 Jetson 启动 `ylhb_mobile_bridge`。
-2. 确认手机和 Jetson 在同一局域网或同一热点网段。
-3. 在首页或设置页填写 `Jetson Base URL`，例如 `http://192.168.137.100:8000`。
-4. 点击“连接机器人”，确认状态接口可用。
-5. 在状态页检查底盘、传感器、TF、进程和建图状态。
-6. 在底盘页低速点动；在建图页启动建图、观察地图、移动机器人并保存地图。
+## 构建验证
 
-## 关键接口
+```bash
+npx expo export --platform android
+npx expo export --platform web
+```
 
-- 急停：`POST /api/stop`
-- 零速度停止：`POST /api/debug/chassis/stop`
-- 启动底层：`POST /api/debug/system/start/bringup`
-- 关闭底层：`POST /api/debug/system/stop/bringup`
-- 启动建图：`POST /api/debug/system/start/mapping`
-- 停止建图：`POST /api/debug/system/stop/mapping`
+## Android APK
 
-## 安全
+本地生成 Android APK 需要安装 JDK 和 Android SDK：
 
-- 第一次底盘测试请架空轮子。
-- 地面低速移动前确认 `/odom` 新鲜。
-- 建图辅助移动前确认 `/odom`、`/scan`、TF 新鲜。
-- `/imu/data` 缺失只提示风险，不会硬锁点动。
+```bash
+npx expo prebuild --platform android
+cd android
+gradlew.bat assembleRelease
+```
 
-## 常见问题
+APK 通常位于 `android/app/build/outputs/apk/release/`。也可以使用 EAS Build：
 
-- 手机连不上 Jetson：确认网络互通，Jetson 防火墙允许 8000 端口。
-- `/api/status` 不通：确认 bridge 已启动，Base URL 没写错。
-- `/cmd_vel` 不存在：确认 ROS2 bringup 已启动。
-- 地图预览等待：启动 mapping 后继续低速移动，等待 `/map` 发布。
-- WebSocket 断开：APP 会降级为 HTTP fallback。
+```bash
+npx eas build --platform android --profile preview
+```
+
+不要把真实机器人 IP、Token、现场日志或其他敏感信息提交到仓库。

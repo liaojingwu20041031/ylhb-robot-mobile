@@ -7,6 +7,7 @@ import {
   SystemStatus,
 } from '../api/types';
 import { ConsoleTone } from '../theme/consoleTheme';
+import { booleanStateText, connectionStateText, mappingStateText, navigationStateText, processStateText, statusSourceText } from './displayText';
 
 export function textOrUnknown(value?: string | number | boolean | null) {
   if (value === undefined || value === null || value === '') {
@@ -75,7 +76,7 @@ export function nodeOk(debugStatus: DebugStatus | undefined, name: string) {
 export function buildDiagnostics(status: RobotStatus, debugStatus?: DebugStatus) {
   const tips: string[] = [];
   if (!status.online) {
-    tips.push('Bridge 未在线：先检查 Jetson Base URL、热点网段和 ylhb_mobile_bridge。');
+    tips.push('机器人服务未在线：请检查服务地址、网络连接和 mobile_bridge。');
   }
   if (status.lastOdomAgeSec === undefined || status.lastOdomAgeSec > 3 || debugStatus?.topics?.['/odom'] === false) {
     tips.push('/odom 无数据：检查 ZLAC、can1、驱动节点和底层 bringup。');
@@ -89,31 +90,7 @@ export function buildDiagnostics(status: RobotStatus, debugStatus?: DebugStatus)
   if (debugStatus?.topics?.['/map'] === false || status.mappingStatus === 'not_running') {
     tips.push('地图不存在或未发布：启动 mapping 后等待 /map，再保存地图。');
   }
-  return tips.length ? tips : ['真实调试链路状态正常，可以继续低速点动或建图测试。'];
-}
-
-export function buildNextStep(status: RobotStatus, debugStatus?: DebugStatus) {
-  const cmdVelOk = topicOk(debugStatus, '/cmd_vel');
-  const scanOk = status.lastScanAgeSec !== undefined && status.lastScanAgeSec <= 1;
-  const odomOk = status.lastOdomAgeSec !== undefined && status.lastOdomAgeSec <= 1;
-  const tfOk = nodeOk(debugStatus, 'tf');
-  const hasMap = topicOk(debugStatus, '/map');
-  if (!status.online) {
-    return '先连接 Jetson bridge，再读取真实状态接口。';
-  }
-  if (!cmdVelOk) {
-    return 'Bridge 已连接，先确认 /cmd_vel 是否存在；架空测试只要求 connected + /cmd_vel。';
-  }
-  if (!odomOk) {
-    return '/cmd_vel 可用但 /odom 不新鲜，地面低速前先修复底盘里程计。';
-  }
-  if (!scanOk || !tfOk) {
-    return '/odom 可用，可以低速点动；建图前继续确认 /scan 和 TF。';
-  }
-  if (!hasMap) {
-    return '/odom、/scan、TF 正常，可以进入建图页启动 mapping 并观察地图增长。';
-  }
-  return '地图数据已具备，可以继续低速移动建图或保存地图。';
+  return tips;
 }
 
 export function formatLogs(logs: AppLog[]) {
@@ -133,23 +110,23 @@ export function buildStatusReport(
   source: StatusSource,
 ) {
   const lines = [
-    '智能机器人调试台状态报告',
+    '机器人控制中心状态报告',
     `时间：${new Date().toLocaleString()}`,
-    `状态来源：${source}`,
-    `Bridge：${textOrUnknown(status.connectionState)}`,
-    `ZLAC：${textOrUnknown(status.zlacStatus ?? debugStatus?.zlacStatus)}`,
-    `CAN：${textOrUnknown(status.canStatus)}`,
-    `/cmd_vel：${textOrUnknown(debugStatus?.topics?.['/cmd_vel'])}`,
+    `状态来源：${statusSourceText(source)}`,
+    `机器人连接：${connectionStateText(status.connectionState)}`,
+    `底盘电机驱动（ZLAC）：${processStateText(status.zlacStatus ?? debugStatus?.zlacStatus)}`,
+    `底盘通信总线（CAN）：${processStateText(status.canStatus)}`,
+    `运动指令通道（/cmd_vel）：${booleanStateText(debugStatus?.topics?.['/cmd_vel'])}`,
     `/odom：${freshnessLabel(status.lastOdomAgeSec ?? debugStatus?.lastOdomAgeSec)}`,
     `/scan：${freshnessLabel(status.lastScanAgeSec ?? debugStatus?.lastScanAgeSec)}`,
     `/imu/data：${freshnessLabel(debugStatus?.lastImuAgeSec)}`,
-    `TF：${textOrUnknown(debugStatus?.nodes?.tf)}`,
-    `底层进程（bringup）：${textOrUnknown(systemStatus?.bringup?.running)}`,
-    `建图进程（mapping）：${textOrUnknown(systemStatus?.mapping?.running)}`,
-    `slam_toolbox：${textOrUnknown(debugStatus?.nodes?.slam_toolbox)}`,
-    `/map：${textOrUnknown(debugStatus?.topics?.['/map'])}`,
-    `Nav2：${textOrUnknown(status.nav2Status ?? debugStatus?.nav2Status)}`,
-    `建图状态（mappingStatus）：${textOrUnknown(mappingStatus?.mappingStatus ?? status.mappingStatus)}`,
+    `坐标变换（TF）：${booleanStateText(debugStatus?.nodes?.tf)}`,
+    `基础驱动（bringup）：${processStateText(systemStatus?.bringup?.running)}`,
+    `建图服务（mapping）：${processStateText(systemStatus?.mapping?.running)}`,
+    `建图引擎（slam_toolbox）：${booleanStateText(debugStatus?.nodes?.slam_toolbox)}`,
+    `地图数据（/map）：${booleanStateText(debugStatus?.topics?.['/map'])}`,
+    `导航系统（Nav2）：${navigationStateText(status.nav2Status ?? debugStatus?.nav2Status)}`,
+    `建图状态（mappingStatus）：${mappingStateText(mappingStatus?.mappingStatus ?? status.mappingStatus)}`,
   ];
   return lines.join('\n');
 }

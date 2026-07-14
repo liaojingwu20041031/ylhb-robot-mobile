@@ -1,77 +1,25 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { AppLogType } from '../src/api/types';
-import { AppButton } from '../src/components/AppButton';
-import { LogPanel } from '../src/components/LogPanel';
-import { PageContainer } from '../src/components/PageContainer';
-import { SectionCard } from '../src/components/SectionCard';
-import { colors } from '../src/theme/consoleTheme';
-import { robotActions, useRobotStore } from '../src/store/robotStore';
+import { useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppLog, AppLogType } from '@/api/types';
+import { AppButton } from '@/components/AppButton';
+import { SectionCard } from '@/components/SectionCard';
+import { robotActions, useRobotStore } from '@/store/robotStore';
+import { colors, radius } from '@/theme/consoleTheme';
 
-const filters: Array<{ key: AppLogType | 'all'; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'info', label: '信息' },
-  { key: 'warn', label: '警告' },
-  { key: 'error', label: '错误' },
-  { key: 'api', label: 'API' },
-  { key: 'debug', label: '调试' },
-  { key: 'user', label: '用户操作' },
-];
+const labels: Record<AppLogType, string> = { info: '信息', warn: '警告', error: '错误', api: '接口', debug: '调试', user: '用户操作' };
+const primaryFilters: Array<{ key: AppLogType | 'all'; label: string }> = [{ key: 'all', label: '全部' }, { key: 'warn', label: '警告' }, { key: 'error', label: '错误' }, { key: 'user', label: '用户操作' }];
+const extraFilters: Array<{ key: AppLogType; label: string }> = [{ key: 'info', label: '信息' }, { key: 'api', label: '接口' }, { key: 'debug', label: '调试' }];
 
 export default function LogsPage() {
-  const { logs, pending } = useRobotStore((snapshot) => ({
-    logs: snapshot.logs,
-    pending: snapshot.pending,
-  }));
-  const [filter, setFilter] = useState<AppLogType | 'all'>('all');
-
-  return (
-    <PageContainer title="系统日志" subtitle="APP 操作、请求结果、错误信息和调试记录。">
-      <SectionCard title="日志筛选" description="复制内容为纯文本，便于现场排查和归档。">
-        <View style={styles.filters}>
-          {filters.map((item) => (
-            <AppButton
-              key={item.key}
-              label={item.label}
-              variant={filter === item.key ? 'primary' : 'ghost'}
-              onPress={() => setFilter(item.key)}
-              style={styles.filter}
-            />
-          ))}
-        </View>
-        <View style={styles.actions}>
-          <AppButton label="复制全部日志" variant="secondary" loading={pending.copyPending} onPress={() => robotActions.copyLogs('all')} style={styles.action} />
-          <AppButton label="复制错误日志" variant="warning" loading={pending.copyPending} onPress={() => robotActions.copyLogs('errors')} style={styles.action} />
-          <AppButton label="复制最近 50 条" variant="secondary" loading={pending.copyPending} onPress={() => robotActions.copyLogs('recent50')} style={styles.action} />
-          <AppButton label="清空日志" variant="danger" onPress={() => robotActions.clearLogs()} style={styles.action} />
-        </View>
-        <Text style={styles.count}>当前日志数量：{logs.length}</Text>
-      </SectionCard>
-      <LogPanel logs={logs} filter={filter} />
-    </PageContainer>
-  );
+  const { logs, pending } = useRobotStore((s) => ({ logs: s.logs, pending: s.pending }));
+  const [filter, setFilter] = useState<AppLogType | 'all'>('all'); const [showMore, setShowMore] = useState(false);
+  const visible = useMemo(() => filter === 'all' ? logs : logs.filter((log) => log.type === filter), [filter, logs]);
+  const clear = () => Alert.alert('清空日志', '确认清空当前所有运行日志？', [{ text: '取消', style: 'cancel' }, { text: '确认清空', style: 'destructive', onPress: () => robotActions.clearLogs() }]);
+  return <FlatList contentInsetAdjustmentBehavior="automatic" data={visible} keyExtractor={(item) => item.id} renderItem={({ item }) => <LogItem log={item} />} contentContainerStyle={styles.content} ItemSeparatorComponent={() => <View style={{ height: 10 }} />} ListEmptyComponent={<Text style={styles.empty}>暂无日志</Text>} ListHeaderComponent={<View style={styles.header}>
+    <View><Text style={styles.pageTitle}>运行日志</Text><Text style={styles.subtitle}>查看机器人操作、警告、错误和接口记录</Text></View>
+    <SectionCard title="筛选与操作"><View style={styles.filters}>{primaryFilters.map((item) => <Filter key={item.key} active={filter === item.key} label={item.label} onPress={() => setFilter(item.key)} />)}</View><Pressable accessibilityRole="button" onPress={() => setShowMore((v) => !v)} style={styles.more}><Text style={styles.moreText}>更多筛选</Text><Text style={styles.moreText}>{showMore ? '收起' : '展开'}</Text></Pressable>{showMore ? <View style={styles.filters}>{extraFilters.map((item) => <Filter key={item.key} active={filter === item.key} label={item.label} onPress={() => setFilter(item.key)} />)}</View> : null}<View style={styles.actions}><AppButton label="复制全部" variant="secondary" loading={pending.copyPending} onPress={() => robotActions.copyLogs('all')} style={styles.action} /><AppButton label="复制错误" variant="warning" loading={pending.copyPending} onPress={() => robotActions.copyLogs('errors')} style={styles.action} /><AppButton label="清空日志" variant="danger" onPress={clear} style={styles.action} /></View><Text style={styles.count}>共 {visible.length} 条</Text></SectionCard>
+  </View>} />;
 }
-
-const styles = StyleSheet.create({
-  filters: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  filter: {
-    minWidth: 76,
-  },
-  actions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  action: {
-    flex: 1,
-    minWidth: 130,
-  },
-  count: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-});
+function Filter({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={[styles.filter, active && styles.filterActive]}><Text style={[styles.filterText, active && styles.filterTextActive]}>{label}</Text></Pressable>; }
+function LogItem({ log }: { log: AppLog }) { return <View style={styles.item}><View style={styles.meta}><Text style={[styles.type, styles[log.type]]}>{labels[log.type]}</Text><Text style={styles.source}>{log.source ?? '应用'}</Text><Text style={styles.time}>{new Date(log.timestamp).toLocaleTimeString()}</Text></View><Text selectable style={styles.message}>{log.message}</Text>{log.detail ? <Text selectable style={styles.detail}>{log.detail}</Text> : null}</View>; }
+const styles = StyleSheet.create({ content: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 16, paddingBottom: 32 }, header: { gap: 16, marginBottom: 14 }, pageTitle: { color: colors.text, fontSize: 28, fontWeight: '700' }, subtitle: { color: colors.textMuted, marginTop: 4 }, filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, filter: { minHeight: 48, minWidth: 72, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 999, backgroundColor: colors.panel }, filterActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft }, filterText: { color: colors.textMuted, fontWeight: '600' }, filterTextActive: { color: colors.primary }, more: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, moreText: { color: colors.primary, fontWeight: '600' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, action: { flex: 1, minWidth: 110 }, count: { color: colors.textMuted, fontSize: 12 }, empty: { color: colors.textMuted, textAlign: 'center', padding: 24 }, item: { padding: 14, gap: 7, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel }, meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, type: { fontSize: 12, fontWeight: '700' }, source: { color: colors.textSubtle, fontSize: 12 }, time: { marginLeft: 'auto', color: colors.textSubtle, fontSize: 11, fontVariant: ['tabular-nums'] }, message: { color: colors.text, fontWeight: '600', lineHeight: 20 }, detail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 }, info: { color: colors.primary }, warn: { color: colors.warning }, error: { color: colors.danger }, api: { color: colors.success }, debug: { color: '#7C3AED' }, user: { color: colors.text } });
