@@ -20,7 +20,7 @@ export function StatusBadge({ label, tone = 'neutral' }: Props) {
 const styles = StyleSheet.create({
   badge: {
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,
     alignSelf: 'flex-start',

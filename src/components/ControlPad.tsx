@@ -55,12 +55,12 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
   }, [movementDisabled]);
 
   const guidance = useMemo(() => {
-    if (!bridgeReady) return 'Bridge 未连接，运动按钮已禁用。';
-    if (!cmdVelReady) return '/cmd_vel 不存在，不能发送速度命令。';
-    if (mode === 'mapping' && !mappingReady) return '建图辅助移动需要 /odom、/scan 与 TF 可用且新鲜。';
-    if (!odomFresh) return '架空测试可用；地面低速前请确认 /odom 新鲜。';
-    if (!scanFresh || !tfFresh) return '地面低速可用；建图前请确认 /scan 与 TF。';
-    return `按住方向键会连续发送 ${commandDurationMs}ms 短时速度命令，松手立即调用 /api/stop。`;
+    if (!bridgeReady) return '机器人未连接，方向按钮已禁用。';
+    if (!cmdVelReady) return '运动通道不可用，方向按钮已禁用。';
+    if (mode === 'mapping' && !mappingReady) return '里程计、激光雷达或坐标变换未就绪，建图点动已禁用。';
+    if (!odomFresh) return '里程计数据过期，地面移动前请先检查。';
+    if (!scanFresh || !tfFresh) return '可进行低速控制；开始建图前请检查传感器状态。';
+    return '按住方向键持续移动，松手立即停止。';
   }, [bridgeReady, cmdVelReady, commandDurationMs, mappingReady, mode, odomFresh, scanFresh, tfFresh]);
 
   const stopHold = (quiet = false) => {
@@ -99,21 +99,20 @@ export function ControlPad({ mode = 'standalone', compact = false }: Props) {
           ? '建图辅助控制使用更保守速度，适合一边低速移动一边观察地图增长。'
           : '底盘点动会向真实机器人发送速度命令。首次测试请架空轮子。'}
       </HelpText> : null}
-      {imuMissing && !compact ? <HelpText tone="warning">/imu/data 缺失或过期：仅提示风险，不硬锁点动。</HelpText> : null}
-      <HelpText tone={movementDisabled ? 'warning' : 'success'}>{guidance}</HelpText>
+      {imuMissing && !compact ? <HelpText tone="warning">姿态传感器数据缺失或过期，仅作风险提示，不会锁定点动。</HelpText> : null}
+      {!compact ? <HelpText tone={movementDisabled ? 'warning' : 'success'}>{guidance}</HelpText> : null}
       <View style={[styles.speedBox, compact && styles.speedBoxCompact]}>
         <Text style={styles.speedTitle}>速度调节</Text>
-        <SpeedSlider label="线速度" value={linearSpeed} unit="m/s" min={LINEAR_MIN} max={LINEAR_MAX} step={0.01} dense={compact} onChange={robotActions.setLinearSpeed} />
-        <SpeedSlider label="角速度" value={angularSpeed} unit="rad/s" min={ANGULAR_MIN} max={ANGULAR_MAX} step={0.01} dense={compact} onChange={robotActions.setAngularSpeed} />
-        {mode === 'mapping' && !compact ? <HelpText tone="warning">前端上限与后端硬上限保持一致：线速度 0.35 m/s，角速度 0.55 rad/s。</HelpText> : null}
+        <SpeedSlider label="直行速度" value={linearSpeed} unit="m/s" min={LINEAR_MIN} max={LINEAR_MAX} step={0.01} dense={compact} onChange={robotActions.setLinearSpeed} />
+        <SpeedSlider label="转向速度" value={angularSpeed} unit="rad/s" min={ANGULAR_MIN} max={ANGULAR_MAX} step={0.01} dense={compact} onChange={robotActions.setAngularSpeed} />
       </View>
       <View style={styles.grid}>
-        <HoldButton label="前进" description={`${speed.toFixed(2)} m/s，续发 ${commandDurationMs}ms`} disabled={movementDisabled} onPressIn={() => startHold('前进', speed, 0)} onPressOut={() => stopHold()} style={[styles.full, compact && styles.compactHold]} />
-        <HoldButton label="左转" description={`${turn.toFixed(2)} rad/s，续发 ${commandDurationMs}ms`} disabled={movementDisabled} onPressIn={() => startHold('左转', 0, turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
-        <AppButton label="零速度停止" description="POST /api/debug/chassis/stop" variant="secondary" loading={pending.controlPending} onPress={() => robotActions.chassisStop()} style={styles.third} />
-        <HoldButton label="右转" description={`${(-turn).toFixed(2)} rad/s，续发 ${commandDurationMs}ms`} disabled={movementDisabled} onPressIn={() => startHold('右转', 0, -turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
-        <HoldButton label="后退" description={`${(-speed).toFixed(2)} m/s，续发 ${commandDurationMs}ms`} disabled={movementDisabled} onPressIn={() => startHold('后退', -speed, 0)} onPressOut={() => stopHold()} style={[compact ? styles.half : styles.full, compact && styles.compactHold]} />
-        <AppButton label="急停" description="全局 emergency stop" variant="danger" loading={pending.controlPending} onPress={() => robotActions.emergencyStop()} style={compact ? styles.half : styles.full} />
+        <HoldButton label="前进" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('前进', speed, 0)} onPressOut={() => stopHold()} style={[styles.full, compact && styles.compactHold]} />
+        <HoldButton label="左转" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('左转', 0, turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
+        <AppButton label="停止" variant="secondary" loading={pending.controlPending} onPress={() => robotActions.chassisStop()} style={styles.third} accessibilityHint="发送零速度停止命令" />
+        <HoldButton label="右转" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('右转', 0, -turn)} onPressOut={() => stopHold()} style={[styles.third, compact && styles.compactHold]} />
+        <HoldButton label="后退" disabled={movementDisabled} disabledReason={guidance} onPressIn={() => startHold('后退', -speed, 0)} onPressOut={() => stopHold()} style={[styles.full, compact && styles.compactHold]} />
+        <AppButton label="紧急停止" variant="danger" loading={pending.controlPending} onPress={() => robotActions.emergencyStop()} style={styles.full} accessibilityLabel="紧急停止机器人" accessibilityHint="立即停止机器人运动" />
       </View>
     </View>
   );
@@ -181,14 +180,14 @@ function SpeedSlider({
 
 function HoldButton({
   label,
-  description,
+  disabledReason,
   disabled,
   onPressIn,
   onPressOut,
   style,
 }: {
   label: string;
-  description: string;
+  disabledReason: string;
   disabled: boolean;
   onPressIn: () => void;
   onPressOut: () => void;
@@ -196,13 +195,18 @@ function HoldButton({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={disabled ? disabledReason : `按住${label}，松手停止`}
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
+      hitSlop={6}
+      android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
       style={({ pressed }) => [styles.holdButton, disabled && styles.holdDisabled, pressed && styles.holdPressed, style]}
     >
       <Text style={styles.holdLabel}>{label}</Text>
-      <Text style={styles.holdDescription}>{description}</Text>
     </Pressable>
   );
 }
@@ -219,7 +223,7 @@ const styles = StyleSheet.create({
   speedBox: {
     gap: 10,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: colors.bgElevated,
     borderColor: colors.border,
     borderWidth: 1,
@@ -230,7 +234,7 @@ const styles = StyleSheet.create({
   },
   speedTitle: {
     color: colors.text,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   sliderBox: {
     gap: 6,
@@ -281,8 +285,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   holdButton: {
-    minHeight: 72,
-    borderRadius: 8,
+    minHeight: 64,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.primary,
@@ -305,11 +309,6 @@ const styles = StyleSheet.create({
     color: colors.panel,
     fontSize: 16,
     fontWeight: '900',
-    textAlign: 'center',
-  },
-  holdDescription: {
-    color: colors.primarySoft,
-    fontSize: 11,
     textAlign: 'center',
   },
   full: {

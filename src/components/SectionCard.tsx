@@ -4,7 +4,7 @@ import { colors, radius } from '../theme/consoleTheme';
 
 type Props = PropsWithChildren<{
   title: string;
-  description: string;
+  description?: string;
   summary?: ReactNode;
   actions?: ReactNode;
 }>;
@@ -15,7 +15,7 @@ export function SectionCard({ title, description, summary, actions, children }: 
       <View style={styles.header}>
         <View style={styles.heading}>
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.description}>{description}</Text>
+          {description ? <Text style={styles.description}>{description}</Text> : null}
         </View>
         {summary ? <View style={styles.summary}>{summary}</View> : null}
       </View>
@@ -31,8 +31,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: radius.md,
-    padding: 12,
+    padding: 16,
     gap: 12,
+    elevation: 1,
+    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
   },
   header: {
     flexDirection: 'row',
@@ -48,7 +50,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   description: {
     color: colors.textMuted,

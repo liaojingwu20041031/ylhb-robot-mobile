@@ -1,6 +1,5 @@
-import { Link } from 'expo-router';
-import { PropsWithChildren } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PropsWithChildren, ReactElement } from 'react';
+import { RefreshControlProps, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme/consoleTheme';
 import { GlobalSafetyBar } from './GlobalSafetyBar';
 
@@ -8,19 +7,17 @@ type Props = PropsWithChildren<{
   title: string;
   subtitle?: string;
   showSafetyBar?: boolean;
+  refreshControl?: ReactElement<RefreshControlProps>;
 }>;
 
-export function PageContainer({ title, subtitle, showSafetyBar = true, children }: Props) {
+export function PageContainer({ title, subtitle, showSafetyBar = false, refreshControl, children }: Props) {
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content} refreshControl={refreshControl}>
       <View style={styles.header}>
         <View style={styles.heading}>
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
-        <Link href="/" style={styles.home}>
-          首页
-        </Link>
       </View>
       {showSafetyBar ? <GlobalSafetyBar /> : null}
       {children}
@@ -30,10 +27,14 @@ export function PageContainer({ title, subtitle, showSafetyBar = true, children 
 
 const styles = StyleSheet.create({
   content: {
-    padding: 14,
-    gap: 14,
+    padding: 16,
+    paddingBottom: 32,
+    gap: 16,
     backgroundColor: colors.bg,
     minHeight: '100%',
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -46,8 +47,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '900',
+    fontSize: 28,
+    fontWeight: '700',
     color: colors.text,
   },
   subtitle: {
@@ -55,16 +56,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: colors.textMuted,
-  },
-  home: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: colors.panelSoft,
-    borderColor: colors.border,
-    borderWidth: 1,
-    color: colors.text,
-    overflow: 'hidden',
-    fontWeight: '800',
   },
 });

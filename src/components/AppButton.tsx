@@ -1,21 +1,25 @@
-import { PropsWithChildren } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
+import { PropsWithChildren, ReactNode } from 'react';
+import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, radius } from '../theme/consoleTheme';
 
 type Variant = 'primary' | 'secondary' | 'warning' | 'danger' | 'ghost';
 
 type Props = PropsWithChildren<{
   label?: string;
+  icon?: ReactNode;
   description?: string;
   variant?: Variant;
   disabled?: boolean;
   loading?: boolean;
   onPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }>;
 
 export function AppButton({
   label,
+  icon,
   description,
   variant = 'primary',
   disabled = false,
@@ -23,31 +27,38 @@ export function AppButton({
   onPress,
   style,
   children,
+  accessibilityLabel,
+  accessibilityHint,
 }: Props) {
   const isDisabled = disabled || loading;
   return (
-    <TouchableOpacity
-      activeOpacity={0.78}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       disabled={isDisabled}
       onPress={onPress}
-      style={[styles.base, styles[variant], isDisabled && styles.disabled, style]}
+      hitSlop={6}
+      android_ripple={{ color: 'rgba(255,255,255,0.18)', borderless: false }}
+      style={({ pressed }) => [styles.base, styles[variant], isDisabled && styles.disabled, pressed && !isDisabled && styles.pressed, style]}
     >
-      {loading ? <ActivityIndicator color={variant === 'ghost' ? colors.textMuted : colors.text} /> : null}
-      <Text style={[styles.label, variant === 'ghost' && styles.ghostText]} numberOfLines={2}>
-        {label ?? children}
-      </Text>
+      <View style={styles.labelRow}>
+        {loading ? <ActivityIndicator color={variant === 'primary' || variant === 'danger' ? '#FFFFFF' : colors.primary} /> : icon}
+        <Text style={[styles.label, styles[`${variant}Text`]]}>{label ?? children}</Text>
+      </View>
       {description ? (
-        <Text style={[styles.description, variant === 'ghost' && styles.ghostDescription]} numberOfLines={3}>
+        <Text style={[styles.description, (variant === 'primary' || variant === 'danger') && styles.invertedDescription]}>
           {description}
         </Text>
       ) : null}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 46,
+    minHeight: 48,
     borderRadius: radius.md,
     borderWidth: 1,
     paddingVertical: 10,
@@ -77,7 +88,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   disabled: {
-    opacity: 0.45,
+    opacity: 0.58,
+  },
+  pressed: {
+    transform: [{ scale: 0.985 }],
+    opacity: 0.9,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   label: {
     color: colors.text,
@@ -91,10 +112,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 15,
   },
+  primaryText: {
+    color: '#FFFFFF',
+  },
+  dangerText: {
+    color: '#FFFFFF',
+  },
+  secondaryText: {
+    color: colors.primary,
+  },
+  warningText: {
+    color: '#92400E',
+  },
   ghostText: {
-    color: colors.text,
+    color: colors.textMuted,
   },
   ghostDescription: {
     color: colors.textSubtle,
+  },
+  invertedDescription: {
+    color: 'rgba(255,255,255,0.82)',
   },
 });
