@@ -541,7 +541,7 @@ export const robotActions = {
     if (response.ok) {
       setState({ lastMapManageError: undefined });
       await robotActions.refreshDebugMaps();
-      const nextDefault = response.data?.default ?? mapName;
+      const nextDefault = response.data?.default.name ?? mapName;
       await robotActions.refreshDebugMapPreview(nextDefault);
     } else {
       reportMapManageError('设置默认地图失败', response);

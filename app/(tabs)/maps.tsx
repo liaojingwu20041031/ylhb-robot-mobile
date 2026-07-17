@@ -40,7 +40,24 @@ export default function MapsPage() {
   const closeRename = () => { setRenameTarget(null); setDraftName(''); };
   const submitRename = async () => { if (!renameTarget || !validName(draftName)) return; const result = await robotActions.renameDebugMap(renameTarget.name, draftName.trim()); if (result.ok) closeRename(); };
   const remove = (map: DebugMapFile) => Alert.alert('删除地图', `确认删除地图“${map.name}”？此操作会删除对应地图配置和图像文件。`, [{ text: '取消', style: 'cancel' }, { text: '确认删除', style: 'destructive', onPress: () => robotActions.deleteDebugMap(map.name) }]);
-  const makeDefault = (map: DebugMapFile) => Alert.alert('设为默认地图', `确认将“${map.name}”设为默认地图？旧默认地图和旧巡逻路线将废弃。`, [{ text: '取消', style: 'cancel' }, { text: '确认', onPress: async () => { const result = await robotActions.confirmDefaultDebugMap(map.name); if (!result.ok) return; if (result.data?.changed === false) Alert.alert('默认地图', '该地图已经是默认地图'); else if ((result.data?.archived_routes ?? []).length) Alert.alert('默认地图已更新', '旧路线已废弃，需要重新创建巡逻路线。'); else Alert.alert('默认地图已更新', '新默认地图已生效。'); } }]);
+  const makeDefault = (map: DebugMapFile) => {
+    const current = map.is_default === true;
+    Alert.alert(
+      current ? '上传当前默认地图' : '设为默认并上传',
+      current ? '确认将当前默认地图上传到平台审核？' : `确认将“${map.name}”设为默认地图并上传？旧默认地图和旧巡逻路线将废弃。`,
+      [{ text: '取消', style: 'cancel' }, { text: '确认', onPress: async () => {
+        const result = await robotActions.confirmDefaultDebugMap(map.name);
+        if (!result.ok || !result.data) return;
+        const upload = result.data.upload;
+        const uploadStatus = ({ PENDING: '待上传', FAILED_RETRYABLE: '等待重试', FAILED_FINAL: '上传失败', SUCCEEDED: '上传成功', FAILED_TO_CREATE: '任务创建失败' } as const)[upload.status] ?? '状态未知';
+        const details = [`上传状态：${uploadStatus}`];
+        if (upload.map_asset_id) details.push(`mapAssetId：${upload.map_asset_id}`);
+        if (upload.error) details.push(`错误：${upload.error}`);
+        if (result.data.archived_routes.length) details.push('旧路线已废弃，需要重新创建巡逻路线。');
+        Alert.alert(result.data.changed ? '默认地图已生效' : '当前默认地图', details.join('\n'));
+      } }],
+    );
+  };
 
   return (
     <PageContainer title="地图管理" subtitle="预览、选择和管理机器人地图">
@@ -62,7 +79,7 @@ export default function MapsPage() {
             <Pressable accessibilityRole="button" onPress={() => setDetailsName(expanded ? null : map.name)} style={styles.detailsToggle}><Text style={styles.detailsLabel}>文件详情</Text><Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} /></Pressable>
             {expanded ? <View style={styles.details}><Field label="地图分辨率" value={map.resolution ?? '未知'} /><Field label="地图原点" value={formatOrigin(map.origin)} /><Field label="地图配置文件" value={fileName(map.yaml_file ?? map.yaml_path)} /><Field label="地图图像文件" value={fileName(map.pgm_file ?? map.pgm_path)} /></View> : null}
             <View style={styles.actions}>
-              {!isDefault && isValid ? <AppButton label="设为默认" variant="warning" disabled={operationPending} loading={pending.mapConfirmDefaultPending && selectedName === map.name} onPress={() => makeDefault(map)} style={styles.action} /> : null}
+              {isValid ? <AppButton label={isDefault ? '上传当前默认地图' : '设为默认并上传'} variant="warning" disabled={operationPending} loading={pending.mapConfirmDefaultPending && selectedName === map.name} onPress={() => makeDefault(map)} style={styles.action} /> : null}
               <AppButton label="重命名" variant="secondary" disabled={operationPending || isDefault || !isValid} onPress={() => openRename(map)} style={styles.action} />
               <AppButton label="删除" variant="danger" disabled={operationPending || isDefault} onPress={() => remove(map)} style={styles.action} />
             </View>

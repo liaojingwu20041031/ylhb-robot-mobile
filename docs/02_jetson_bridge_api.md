@@ -19,6 +19,7 @@ Jetson `ylhb_mobile_bridge` 使用 HTTP/WebSocket 暴露真实机器人调试接
 - `GET /api/debug/mapping/status`
 - `GET /api/debug/mapping/map_snapshot?downsample=1`
 - `POST /api/debug/mapping/save`
+- `POST /api/debug/maps/{map_name}/confirm_default`
 
 ## WebSocket
 
@@ -55,6 +56,8 @@ WebSocket 失败只影响状态来源显示，APP 会继续通过 HTTP fallback 
   "data": {}
 }
 ```
+
+`confirm_default` 同时完成本地默认地图切换和平台上传任务创建；本地切换成功后，上传失败不会回滚。当前默认地图再次调用时不会重复归档，只会复用或恢复同一内容的上传任务。返回的 `data.upload` 仅包含上传状态、`map_asset_id` 和简短错误，APP 不读取或上传地图文件，也不保存设备 Token。
 
 错误响应：
 

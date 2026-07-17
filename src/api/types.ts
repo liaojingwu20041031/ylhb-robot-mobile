@@ -226,9 +226,18 @@ export type DeleteMapResult = {
 
 export type ConfirmDefaultMapResult = {
   changed: boolean;
-  default: string;
-  archived_previous_map?: string | null;
-  archived_routes: string[];
+  default_applied: boolean;
+  default: DebugMapFile;
+  archived_previous_map: { yaml_file: string; pgm_file: string } | null;
+  archived_routes: Array<{ from: string; to: string }>;
+  upload: {
+    task_created: boolean;
+    task_id: string;
+    status: 'PENDING' | 'FAILED_RETRYABLE' | 'FAILED_FINAL' | 'SUCCEEDED' | 'FAILED_TO_CREATE';
+    map_asset_id: string;
+    error: string;
+    content_identity_sha256: string;
+  };
 };
 
 export type AppLogType = 'info' | 'warn' | 'error' | 'api' | 'debug' | 'user';
