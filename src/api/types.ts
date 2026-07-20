@@ -142,6 +142,31 @@ export type SystemStatus = {
   mapping: ProcessStatus;
 };
 
+function normalizeProcessStatus(mode: ProcessMode, value: unknown): ProcessStatus {
+  if (typeof value === 'object' && value !== null) return value as ProcessStatus;
+  return {
+    mode,
+    command: null,
+    pid: null,
+    started_at: null,
+    running: value === 'running',
+    returncode: null,
+    log_path: null,
+    log_tail: '',
+    managed_by_bridge: true,
+  };
+}
+
+export function normalizeSystemStatus(value: unknown): SystemStatus {
+  const raw = typeof value === 'object' && value !== null
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    bringup: normalizeProcessStatus('bringup', raw.bringup),
+    mapping: normalizeProcessStatus('mapping', raw.mapping),
+  };
+}
+
 export type MapMeta = {
   frame_id: string;
   timestamp: number;

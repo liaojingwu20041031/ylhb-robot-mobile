@@ -20,6 +20,7 @@ import {
   SavedMap,
   SystemStatus,
   VelocityCommand,
+  normalizeSystemStatus,
 } from './types';
 
 function normalizeTimestamp(value: unknown) {
@@ -182,7 +183,10 @@ export function createRobotApi(baseUrl: string) {
       normalizeStatus,
     ),
     getDebugStatus: () => normalized<any, DebugStatus>(() => request<any>(baseUrl, '/api/debug/status'), normalizeDebugStatus),
-    getSystemStatus: () => request<SystemStatus>(baseUrl, '/api/debug/system/status'),
+    getSystemStatus: () => normalized<unknown, SystemStatus>(
+      () => request<unknown>(baseUrl, '/api/debug/system/status'),
+      normalizeSystemStatus,
+    ),
     startBringup: () => systemProcess('start', 'bringup'),
     stopBringup: () => systemProcess('stop', 'bringup'),
     startMapping: () => systemProcess('start', 'mapping'),

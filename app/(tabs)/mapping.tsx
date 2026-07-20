@@ -30,7 +30,7 @@ export default function MappingPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      robotActions.refreshMappingStatus(); robotActions.refreshDebugStatus();
+      robotActions.refreshSystemStatus(); robotActions.refreshMappingStatus(); robotActions.refreshDebugStatus();
       if (!mapStreamConnected) robotActions.refreshMapSnapshot(1);
     }, 1000);
     return () => { clearInterval(timer); };
